@@ -221,7 +221,10 @@ class IRNode(Node):
                 # detect broadcast pattern
                 if isinstance(tensor.op, tvm.te.PlaceholderOp) \
                     and len(op.output(0).shape) > len(tensor.shape) \
-                    and np.prod(op.output(0).shape) > np.prod(tensor.shape):
+                    and np.prod(op.output(0).shape) > 16 * np.prod(tensor.shape) # is broadcast
+                if len(op.reduce_axis) > 0:
+                    cache = True
+                if cache:
                     cached_tensor.add(tensor)
         if self.reduce_op is not None:
             for tensor in self.reduce_op.input_tensors:
@@ -240,6 +243,64 @@ class IRNode(Node):
             buffer_len = num_elem * int((tvm.DataType(tensor.dtype).bits + 7) // 8)
             buffer_len = (buffer_len + 31) // 32 * 32
             result += buffer_len
+        return result
+
+    def infer_strides_TensorCore(self, shape, rstep={}) -> Tuple[Stride, Stride, Stride]:
+        assert self.get_tag("tensorCoreConfig")
+        shapes = self.infer_dependency_reduce_inputs(shape, rstep)
+        AS_shape, BS_shape = shapes.values()
+        CS_shape = shape
+        A_ax_m, A_ax_k, B_ax_k, B_ax_n, C_ax_m, C_ax_n = self.infer_tensorcore_axis()
+        # applying strides
+        offset = 8
+        A_high_ax = min(A_ax_m, A_ax_k)
+        B_high_ax = min(B_ax_n, B_ax_k)
+        C_high_ax = min(C_ax_m, C_ax_n)
+        A_stride = Stride(stride=np.prod(AS_shape[A_high_ax+1:]) + offset, ax=A_high_ax)
+        B_stride = Stride(stride=np.prod(BS_shape[B_high_ax+1:]) + offset, ax=B_high_ax)
+        C_stride = Stride(stride=np.prod(CS_shape[C_high_ax+1:]) + offset, ax=C_high_ax)
+        return A_stride, B_stride, C_stride
+
+    def infer_smem_usage_TensorCore(self, shape, rstep) -> int:
+        # returns internal memory usage and output memory usage (if dump to shared)
+        assert self.get_tag("tensorCoreConfig")
+        shapes = self.infer_dependency_reduce_inputs(shape, rstep)
+        AS_shape, BS_shape = shapes.values()
+        A_stride, B_stride, C_stride = self.infer_strides_TensorCore(shape, rstep)
+        AS_elem = A_stride.compute_elements_from_shape(AS_shape)
+        BS_elem = B_stride.compute_elements_from_shape(BS_shape)
+        # TODO: consider TVM's allocation of CS_elem?
+        # CS_elem = C_stride.compute_elements_from_shape(shape)
+
+        # running the same as infer_smem_usage
+        result = 0
+        shape = {name: [tvm.arith.ConstIntBound(0, val - 1) for val in shape] for name in self._output_names}
+        shapes = self.ana.infer(shape, rstep)
+        for op in self._sche.stage_map:
+            if not isinstance(op, tvm.te.ComputeOp):continue
+            for i, tensor in enumerate(op.input_tensors):
+                cache = isinstance(self._sche[tensor].op, tvm.te.PlaceholderOp) \
+                    and len(op.output(0).shape) > len(tensor.shape) \
+                    and np.prod(op.output(0).shape) > 16 * np.prod(tensor.shape) # is broadcast
+                if len(op.reduce_axis) > 0:
+                    cache = True
+                if tensor.name.startswith("input"):
+                    input_id = [arg.name for arg in self._input_args].index(tensor.name)
+                    assert(input_id >= 0)
+                    src_node = self.inputs[input_id].src_node
+                    if not src_node.is_placeholder():
+                        cache = False
+                if cache:
+                    num_elem = np.prod(shapes[tensor.name])
+                    if len(op.reduce_axis) > 0:
+                        assert i < 2
+                        if i == 0:
+                            num_elem = AS_elem
+                        else:
+                            num_elem = BS_elem
+                    buffer_len = num_elem * int((tvm.DataType(tensor.dtype).bits + 7) // 8)
+                    buffer_len = (buffer_len + 31) // 32 * 32
+                    result += buffer_len
         return result
 
     @functools.lru_cache()
