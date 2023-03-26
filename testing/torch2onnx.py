@@ -17,13 +17,20 @@ def tofp16model(in_file_name, out_file_name):
     save_model(trans_model, out_file_name)
 
 def torch2onnx(prefix, model, inputs, fp16):
-    outputs = model(*inputs)
+    print("start inference")
+    model = model.cuda()
+    model.eval()
+    cu_inputs = []
+    for item in inputs:
+        cu_inputs.append(item.cuda() if isinstance(item, torch.Tensor) else item)
+    outputs = model(*cu_inputs)
     if not isinstance(outputs, (tuple, list)):
         outputs = (outputs, )
     input_names = ["input"+str(i) for i in range(len(inputs))]
     output_names = ["output"+str(i) for i in range(len(outputs))]
+    print("start export")
     torch.onnx.export(
-        model, inputs,
+        model.cpu(), inputs,
         osp.join(prefix, "model.onnx"),
         input_names=input_names,
         output_names=output_names,

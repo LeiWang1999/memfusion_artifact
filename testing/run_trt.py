@@ -18,6 +18,7 @@ def run_trt(prefix, use_fp16=False):
         raise RuntimeError()
     config = builder.create_builder_config()
     config.set_flag(trt.BuilderFlag.STRICT_TYPES)
+    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 20) # 1 MiB
     if use_fp16:
         config.set_flag(trt.BuilderFlag.FP16)
     engine = builder.build_engine(network, config)

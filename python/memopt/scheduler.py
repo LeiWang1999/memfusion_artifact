@@ -35,7 +35,7 @@ class Scheduler:
             return True
         cache = isinstance(self.sche[tensor].op, tvm.te.PlaceholderOp) \
                     and len(op.output(0).shape) > len(tensor.shape) \
-                    and np.prod(op.output(0).shape) > np.prod(tensor.shape) # is broadcast
+                    and np.prod(op.output(0).shape) > 16 * np.prod(tensor.shape) # is broadcast
         return cache
 
     # [Parameters]

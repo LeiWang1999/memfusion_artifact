@@ -203,7 +203,7 @@ class IRNode(Node):
             for tensor in op.input_tensors:
                 cache = isinstance(self._sche[tensor].op, tvm.te.PlaceholderOp) \
                     and len(op.output(0).shape) > len(tensor.shape) \
-                    and np.prod(op.output(0).shape) > np.prod(tensor.shape) # is broadcast
+                    and np.prod(op.output(0).shape) > 16 * np.prod(tensor.shape) # is broadcast
                 if len(op.reduce_axis) > 0:
                     cache = True
                 if cache:
@@ -256,7 +256,7 @@ class IRNode(Node):
             for i, tensor in enumerate(op.input_tensors):
                 cache = isinstance(self._sche[tensor].op, tvm.te.PlaceholderOp) \
                     and len(op.output(0).shape) > len(tensor.shape) \
-                    and np.prod(op.output(0).shape) > np.prod(tensor.shape) # is broadcast
+                    and np.prod(op.output(0).shape) > 16 * np.prod(tensor.shape) # is broadcast
                 if len(op.reduce_axis) > 0:
                     cache = True
                 if tensor.name.startswith("input"):

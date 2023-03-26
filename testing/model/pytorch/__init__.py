@@ -63,6 +63,30 @@ def bert(batch_size):
     # inputs = (input_ids, token_type_ids, attention_mask, masked_lm_labels, next_sentence_label)
     return model, inputs
 
+def bert_large(batch_size):
+    from .bert_config import BertConfig
+    from .pytorch_bert import BertModel
+
+    # from transformers import BertConfig, BertModel
+    config = BertConfig(vocab_size=30522,
+                hidden_size=1024,
+                num_hidden_layers=24,
+                num_attention_heads=16,
+                intermediate_size=4096,
+                max_position_embeddings=512,
+                attention_probs_dropout_prob=0.1,
+                hidden_dropout_prob=0.1,
+                batch_size=batch_size)
+    model = BertModel(config)
+    input_ids = torch.LongTensor(np.ones([config.batch_size, config.max_position_embeddings]))
+    token_type_ids = torch.LongTensor(np.ones([config.batch_size, config.max_position_embeddings]))
+    attention_mask = torch.LongTensor(np.ones([config.batch_size, config.max_position_embeddings]))
+    masked_lm_labels = None # torch.LongTensor(np.ones([config.batch_size, config.max_position_embeddings]))
+    next_sentence_label = None # torch.LongTensor(np.ones([config.batch_size]))
+    inputs = (input_ids, attention_mask, token_type_ids)
+    # inputs = (input_ids, token_type_ids, attention_mask, masked_lm_labels, next_sentence_label)
+    return model, inputs
+
 def transformer(batch_size):
     from transformers import (BertConfig, EncoderDecoderConfig,
                               EncoderDecoderModel)
