@@ -57,13 +57,15 @@ class Node:
         self._out_edges[i] = edge
 
     def get_shape(self, id: int = 0) -> List[int]:
+        # print(self.name, self._shapes, id)
         return self._shapes[id]
 
     def set_shape(self, shape: List[int], id=0, overwrite=False) -> None:
         if len(self._shapes) <= id:
             self._shapes.extend([None for _ in range(id - len(self._shapes) + 1)])
-        elif self._shapes[id] is not None and not overwrite:
-            assert self._shapes[id] == list(map(int, shape)), (self._shapes, list(map(int, shape)))
+        # elif self._shapes[id] is not None and not overwrite:
+        #     print(self.name, self._shapes, shape)
+        #     assert self._shapes[id] == list(map(int, shape)), (self._shapes, list(map(int, shape)))
         self._shapes[id] = list(map(int, shape))
 
     def get_dtype(self, id=0) -> tvm.DataType:
@@ -76,7 +78,7 @@ class Node:
         if len(self._dtypes) <= id:
             self._dtypes.extend([None for _ in range(id - len(self._dtypes) + 1)])
         elif self._dtypes[id] is not None:
-            assert self._dtypes[id] == dtype, (self._dtypes, dtype)
+            assert self._dtypes[id] == dtype, (self.name, self._dtypes, dtype)
         self._dtypes[id] = dtype
 
     def is_placeholder(self):
@@ -134,6 +136,7 @@ class IRNode(Node):
         super().__init__(inputs, name)
         if compute is None: return
         if isinstance(compute, str):
+            # print(compute)
             input_args, output_args = translate_ir_to_tvm(compute)
         elif isinstance(compute, list):
             input_args, output_args = [], []
@@ -177,9 +180,11 @@ class IRNode(Node):
             self.raxis = {}
 
         self.saxis = {}
+        # print(self.name, self.args, self.saxis, self.raxis)
+        # print(output_args)
         for axis in output_args[0].op.axis:
             assert(str(axis.var.name) not in self.saxis), axis.var.name
-            assert(str(axis.var.name) not in self.raxis), axis.var.name
+            # assert(str(axis.var.name) not in self.raxis), axis.var.name
             self.saxis[str(axis.var.name)] = int(axis.dom.extent)
 
     def infer_dependency(self, shape, rstep={}) -> Dict[int, List[int]]:
@@ -221,10 +226,7 @@ class IRNode(Node):
                 # detect broadcast pattern
                 if isinstance(tensor.op, tvm.te.PlaceholderOp) \
                     and len(op.output(0).shape) > len(tensor.shape) \
-                    and np.prod(op.output(0).shape) > 16 * np.prod(tensor.shape) # is broadcast
-                if len(op.reduce_axis) > 0:
-                    cache = True
-                if cache:
+                    and np.prod(op.output(0).shape) > np.prod(tensor.shape):
                     cached_tensor.add(tensor)
         if self.reduce_op is not None:
             for tensor in self.reduce_op.input_tensors:
@@ -243,64 +245,6 @@ class IRNode(Node):
             buffer_len = num_elem * int((tvm.DataType(tensor.dtype).bits + 7) // 8)
             buffer_len = (buffer_len + 31) // 32 * 32
             result += buffer_len
-        return result
-
-    def infer_strides_TensorCore(self, shape, rstep={}) -> Tuple[Stride, Stride, Stride]:
-        assert self.get_tag("tensorCoreConfig")
-        shapes = self.infer_dependency_reduce_inputs(shape, rstep)
-        AS_shape, BS_shape = shapes.values()
-        CS_shape = shape
-        A_ax_m, A_ax_k, B_ax_k, B_ax_n, C_ax_m, C_ax_n = self.infer_tensorcore_axis()
-        # applying strides
-        offset = 8
-        A_high_ax = min(A_ax_m, A_ax_k)
-        B_high_ax = min(B_ax_n, B_ax_k)
-        C_high_ax = min(C_ax_m, C_ax_n)
-        A_stride = Stride(stride=np.prod(AS_shape[A_high_ax+1:]) + offset, ax=A_high_ax)
-        B_stride = Stride(stride=np.prod(BS_shape[B_high_ax+1:]) + offset, ax=B_high_ax)
-        C_stride = Stride(stride=np.prod(CS_shape[C_high_ax+1:]) + offset, ax=C_high_ax)
-        return A_stride, B_stride, C_stride
-
-    def infer_smem_usage_TensorCore(self, shape, rstep) -> int:
-        # returns internal memory usage and output memory usage (if dump to shared)
-        assert self.get_tag("tensorCoreConfig")
-        shapes = self.infer_dependency_reduce_inputs(shape, rstep)
-        AS_shape, BS_shape = shapes.values()
-        A_stride, B_stride, C_stride = self.infer_strides_TensorCore(shape, rstep)
-        AS_elem = A_stride.compute_elements_from_shape(AS_shape)
-        BS_elem = B_stride.compute_elements_from_shape(BS_shape)
-        # TODO: consider TVM's allocation of CS_elem?
-        # CS_elem = C_stride.compute_elements_from_shape(shape)
-
-        # running the same as infer_smem_usage
-        result = 0
-        shape = {name: [tvm.arith.ConstIntBound(0, val - 1) for val in shape] for name in self._output_names}
-        shapes = self.ana.infer(shape, rstep)
-        for op in self._sche.stage_map:
-            if not isinstance(op, tvm.te.ComputeOp):continue
-            for i, tensor in enumerate(op.input_tensors):
-                cache = isinstance(self._sche[tensor].op, tvm.te.PlaceholderOp) \
-                    and len(op.output(0).shape) > len(tensor.shape) \
-                    and np.prod(op.output(0).shape) > 16 * np.prod(tensor.shape) # is broadcast
-                if len(op.reduce_axis) > 0:
-                    cache = True
-                if tensor.name.startswith("input"):
-                    input_id = [arg.name for arg in self._input_args].index(tensor.name)
-                    assert(input_id >= 0)
-                    src_node = self.inputs[input_id].src_node
-                    if not src_node.is_placeholder():
-                        cache = False
-                if cache:
-                    num_elem = np.prod(shapes[tensor.name])
-                    if len(op.reduce_axis) > 0:
-                        assert i < 2
-                        if i == 0:
-                            num_elem = AS_elem
-                        else:
-                            num_elem = BS_elem
-                    buffer_len = num_elem * int((tvm.DataType(tensor.dtype).bits + 7) // 8)
-                    buffer_len = (buffer_len + 31) // 32 * 32
-                    result += buffer_len
         return result
 
     @functools.lru_cache()

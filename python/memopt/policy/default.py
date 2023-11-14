@@ -487,6 +487,12 @@ class DefaultPolicy:
                 if codegen_dict.block[i] // codegen_dict.thread[i] % 2 == 0:
                     codegen_dict._step[i] = 2
                     break
+        if node.get_dtype().bits == 8: # set step=4 for 8bit case
+            codegen_dict._step = [1 for _ in range(ndim)]
+            for i in reversed(range(ndim)):
+                if codegen_dict.block[i] // codegen_dict.thread[i] % 4 == 0:
+                    codegen_dict._step[i] = 4
+                    break
         # Plan vectorize
         def is_cont(shape, vec):
             if len(shape) == 0: return vec == 1
@@ -499,7 +505,7 @@ class DefaultPolicy:
             return int(np.prod(shape)) % factor == 0
         def is_type_allowed(dtype, vec):
             return dtype.bits * vec <= 128
-        vectorize_sizes = [8, 4, 2]
+        vectorize_sizes = [16, 8, 4, 2]
         dtypes = node.get_reduce_inputs_dtype()
         shapes = node.infer_dependency_reduce_inputs(tile, rsteps)
         for tensor, shape in shapes.items():

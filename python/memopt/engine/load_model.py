@@ -28,6 +28,7 @@ def load_model(fname: str) -> List[Node]:
                 input_list.append([node_map[src_node], src_id])
         if op_type == "Result":
             if input_list[0] is not None:
+                # print(input_list)
                 node = OutputNode(*input_list[0])
             else:
                 # result node connect to placeholder, simply ignore
@@ -40,8 +41,10 @@ def load_model(fname: str) -> List[Node]:
                     option_kv[option[0:index]] = eval(option[index+1:])
                 else:
                     option_kv[option] = True
-            if "skip" in option_kv and option_kv["skip"] == True:
-                ir = None
+            # if "skip" in option_kv and option_kv["skip"] == True or op_type == "QuantLinear":
+            #     ir = None
+            # print("load node {} {} {}".format(node_id, op_type, option_kv))
+            # print("ir = ", ir)
             node = IRNode(input_list, ir, get_node_name(node_id, op_type))
             for k, v in option_kv.items(): node.add_tag(k, v)
         node_map[node_id] = node

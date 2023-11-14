@@ -1,0 +1,1 @@
+nsys nvprof --profile-from-start off python testing/run_trt_profile.py --fp16 --prefix model/resnet

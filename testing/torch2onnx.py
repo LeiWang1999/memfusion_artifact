@@ -13,6 +13,7 @@ def tofp16model(in_file_name, out_file_name):
     from onnxconverter_common import convert_float_to_float16
     onnx_model = load_model(in_file_name)
     trans_model = convert_float_to_float16(onnx_model, keep_io_types=False)
+    print("converted model to fp16")
     checker.check_model(trans_model)
     save_model(trans_model, out_file_name)
 
@@ -39,7 +40,7 @@ def torch2onnx(prefix, model, inputs, fp16):
         do_constant_folding=False,
         opset_version=11)
     if fp16:
-        tofp16model( osp.join(prefix, "model.onnx"),  osp.join(prefix, "model.onnx"))
+        tofp16model(osp.join(prefix, "model.onnx"),  osp.join(prefix, "model.onnx"))
     feed_dict = dict(zip(input_names, inputs))
     np.savez(osp.join(prefix, "inputs.npz"), **feed_dict)
 

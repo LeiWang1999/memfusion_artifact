@@ -102,6 +102,7 @@ def output(shape,  # pylint:disable=too-many-arguments
     if topi is not None:
         result = te.compute(topi.shape, lambda *X: topi[X], name=name, tag='')
     else:
+        # print(name, shape, func, dtype, tag)
         result = te.compute(shape, func, name=name, tag=tag)
 
     if not shape:
@@ -124,9 +125,10 @@ def translate_to_tvm(expr: str, input_dict, extra_outputs=[]) -> Tuple[List[te.T
 
 def translate_ir_to_tvm(antares_ir: str) -> Tuple[List[te.Tensor], List[te.Tensor]]:
     antares_ir = antares_ir.strip()
+
     assert antares_ir.startswith(
         '- '
-    ), "The computing expression doesn't start with proper prefix: - ..."
+    ), f"The computing expression {antares_ir} doesn't start with proper prefix: - ..."
 
     antares_ir = antares_ir[2:]
     antares_ir = antares_ir.replace("einstein_v2", "translate_to_tvm")

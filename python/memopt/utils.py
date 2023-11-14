@@ -81,7 +81,7 @@ extern "C" float profile({}) {{
     def compile_and_load(self, arch, timeout: float = None) -> ctypes.CDLL:
         if arch.platform == "CUDA":
             profiling_code = self._create_code_for_profiling()
-            src = tempfile.NamedTemporaryFile(mode='w', suffix=".cu")
+            src = tempfile.NamedTemporaryFile(mode='w', suffix=".cu", delete=False)
             lib_name = src.name.replace(".cu", ".so")
             compute_version = arch.compute_capability
             cutlass_dir = os.path.expanduser("~/cutlass/include")

@@ -52,6 +52,14 @@ def ref_output(onnx_model_path, device):
     _ = [get_runtime() for i in range(50)] # warmup
     times = [get_runtime() for i in range(100)]
     print(np.mean(times), np.min(times), np.max(times))
+    # print output
+    output_data = io_binding.copy_outputs_to_cpu()
+    for i, item in enumerate(outputs):
+        # convert list into np array
+        data = np.array(output_data[i]).flatten()
+        
+        # print first 10 elements and the last 
+        print(item.name, data[:10], '...' ,data[-1])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
