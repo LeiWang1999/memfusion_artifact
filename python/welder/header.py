@@ -209,6 +209,7 @@ __device__ void decode_i4s_to_f16(T1 *_i4s, T2* B_local_decode, const int N = 8)
 
 rocm_default_header = """
 #include <hip/hip_runtime.h>
+#include <rocwmma/rocwmma.hpp>
 #include <math.h>
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #define min(a, b) (((a) < (b)) ? (a) : (b))
@@ -263,7 +264,38 @@ using float32x4
  = __attribute__((__vector_size__(4 * sizeof(float)))) float;
 using float32x16
  = __attribute__((__vector_size__(16 * sizeof(float)))) float;
- 
+
+
+template<int row_size, int col_size, int panel_width>
+__device__ int rasterization2DRow(int idx) {
+  const int block_size = row_size * col_size;
+  const int panel_size = panel_width * col_size;
+  const int block_offset = idx % block_size;
+  const int block_idx = idx / block_size;
+  const int panel_offset = block_offset % panel_size;
+  const int panel_idx = block_offset / panel_size;
+  const int total_panel = (block_size + panel_size - 1) / panel_size;
+  const int stride = panel_idx + 1 < total_panel ? panel_width : (block_size - panel_idx * panel_size) / col_size;
+  const int col_idx = (panel_idx & 1) ? col_size - 1 - panel_offset / stride : panel_offset / stride;
+  const int row_idx = panel_offset % stride + panel_idx * panel_width;
+  return block_idx * block_size + row_idx * col_size + col_idx;
+}
+
+template<int row_size, int col_size, int panel_width>
+__device__ int rasterization2DColumn(int idx) {
+  const int block_size = row_size * col_size;
+  const int panel_size = panel_width * row_size;
+  const int block_offset = idx % block_size;
+  const int block_idx = idx / block_size;
+  const int panel_offset = block_offset % panel_size;
+  const int panel_idx = block_offset / panel_size;
+  const int total_panel = (block_size + panel_size - 1) / panel_size;
+  const int stride = panel_idx + 1 < total_panel ? panel_width : (block_size - panel_idx * panel_size) / row_size;
+  const int row_idx = (panel_idx & 1) ? row_size - 1 - panel_offset / stride : panel_offset / stride;
+  const int col_idx = panel_offset % stride + panel_idx * panel_width;
+  return block_idx * block_size + row_idx * col_size + col_idx;
+}
+
 """
 
 cutlass_header = """

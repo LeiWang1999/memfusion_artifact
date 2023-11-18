@@ -3,7 +3,7 @@ from tvm import relay, ir
 from welder.graph import IRNode, OutputNode, Node
 from welder.te_utils import normalize_tensor_names
 from welder.engine import Engine, MultiProcTunner
-from ..integration import add_source
+from ..integration import add_source, set_arch
 
 def tune_node(ordered_nodes, names):
     nodes = []
@@ -20,6 +20,7 @@ class WelderTunePass(relay.ExprMutator):
     def __init__(self, arch, topk=20, save_perf_log=None):
         super().__init__()
         self.arch = arch
+        set_arch(arch)
         self.topk = topk
         self.save_perf_log_ = save_perf_log
 
@@ -32,6 +33,7 @@ class WelderTunePass(relay.ExprMutator):
         # print("ordered_nodes:",ordered_nodes)
         # print(tune_node(ordered_nodes, ['ladder_perfect_im2col_conv_7']))
         # raise NotImplementedError()
+
         tunner = MultiProcTunner(ordered_nodes, arch=self.arch, device="cuda:0", topk=self.topk)
         engine = Engine(tunner)
         # tunner.load_cache("a.pkl")

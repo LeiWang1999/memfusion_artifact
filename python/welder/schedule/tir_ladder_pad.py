@@ -46,7 +46,7 @@ class TIRLadderMMAPadScheduler2D(TIRSchedulerBase):
             WMMA_STORE_16x16x16_F16_SHARED_INTRIN,
         )
         # const val for testing
-        warp_size = 32
+        warp_size = self.config.arch.warp_size
         wmma_m, wmma_n, wmma_k = 16, 16, 16
         sch, config = self.sche, self.config
         write_sch(sch, log_path, "original")

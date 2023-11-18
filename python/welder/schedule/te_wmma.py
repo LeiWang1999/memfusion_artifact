@@ -12,6 +12,7 @@ class TEWarpMMAScheduler(TESchedulerBase):
             if op is not self.output_op:
                 sch[op].compute_inline()
         out = self.output_op
+        warp_size = self.config.arch.warp_size
         use_global = len(self.shared_outputs) == 0 and self.reduce_op == self.output_op
         # use_global = False
         assert (len(self.reduce_op.input_tensors) == 2)
@@ -67,7 +68,7 @@ class TEWarpMMAScheduler(TESchedulerBase):
         if A in self.shared_inputs:
             config.tc_extra_conf.AS_shape[A_ax_k] = int(C.op.reduce_axis[-1].dom.extent) + offset
 
-        self.block_size[0] = 32
+        self.block_size[0] = warp_size
         for blk, warp in zip(config.block, config.warp):
             assert blk % warp == 0
             self.block_size[1] *= (blk // warp)

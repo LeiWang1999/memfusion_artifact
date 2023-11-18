@@ -104,7 +104,7 @@ class TCPolicy(DefaultPolicy):
     def compute_node_stride_map(self, node: IRNode, td: TileDict):
         if not node.get_tag("tensorCoreConfig"):
             return super().compute_node_stride_map(node, td)
-        td.use_cutlass_mma[node] = self._use_cutlass_mma(node, td)
+        td.use_cutlass_mma[node] = self._use_cutlass_mma(node, td) if self.arch.platform == "CUDA" else False
         use_layout = self._can_implement_layout(node, td)
         AS_stride, BS_stride, C_stride = self._compute_tc_strides(node, td.get_tile(node), td.get_rstep(node))
         A_stride, B_stride, _ = self._compute_tc_strides(node, td.get_tile(node))
@@ -142,6 +142,8 @@ class TCPolicy(DefaultPolicy):
             wmma = [8, 32, 16]
         else:
             wmma = [16, 16, 16]
+        if "ROCm" in self.arch.platform:
+            wmma = [16, 16, 16]
         wmma_tile = [1 for i in range(ndim)]
         wmma_tile[ax_m] = wmma[0]
         wmma_tile[ax_n] = wmma[1]
@@ -175,6 +177,7 @@ class TCPolicy(DefaultPolicy):
             warp_tile[dim_order[0]] *= factor
 
         codegen_dict = Config()
+        codegen_dict.arch = self.arch
         codegen_dict.fast_decoding = node.get_tag("fast_decoding")
         codegen_dict.use_tc = self.arch.compute_capability
         codegen_dict.block = tile
