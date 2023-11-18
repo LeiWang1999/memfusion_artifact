@@ -50,10 +50,13 @@ class TIRCutlassMMAScheduler(TIRSchedulerBase):
         warp_tile_M, warp_tile_N = self.config.warp[C_ax_m], self.config.warp[C_ax_n]
         out_dtype = self.reduce_op.output(0).dtype
         in_dtype = self.reduce_op.input_tensors[0].dtype
-        log_path = f"progress/tir_mma_{block_tile_M}_{block_tile_N}_{warp_tile_M}_{warp_tile_N}"
-        AK = self.args[0].shape[-2] if transpose_A else self.args[0].shape[-1]
-        BK = self.args[1].shape[-1] if transpose_B else self.args[1].shape[-2]
-        is_fpa_intb = (AK != BK)
+        # log_path = f"progress/tir_mma_{block_tile_M}_{block_tile_N}_{warp_tile_M}_{warp_tile_N}"
+        is_fpa_intb = False
+        if len(self.args[0].shape) == 2 and len(self.args[1].shape) == 2:
+            # make sure it's a gemm case
+            AK = self.args[0].shape[-2] if transpose_A else self.args[0].shape[-1]
+            BK = self.args[1].shape[-1] if transpose_B else self.args[1].shape[-2]
+            is_fpa_intb = (AK != BK)
         
         write_sch(sch, log_path, "original")
         
@@ -334,8 +337,8 @@ class TIRCutlassMMAScheduler(TIRSchedulerBase):
                 else:
                     sch.annotate(K_outer, "software_pipeline_stage", [0, 0, 1, 1, 2])
                     sch.annotate(K_outer, "software_pipeline_order", [0, 1, 2, 4, 3])
-            # sch.annotate(K_outer, "software_pipeline_async_stages", [0])
-            # self.passes.append((3, tvm.tir.transform.InjectPTXAsyncCopy()))
+            sch.annotate(K_outer, "software_pipeline_async_stages", [0])
+            self.passes.append((3, tvm.tir.transform.InjectPTXAsyncCopy()))
         elif config.use_tc >= "70":
             if chunk_size % 8 != 0:
                 sch.annotate(K_outer, "software_pipeline_stage", [0, 0, 0, 0, 1, 1, 1])
