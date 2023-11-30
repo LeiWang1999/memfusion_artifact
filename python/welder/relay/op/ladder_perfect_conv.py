@@ -42,7 +42,6 @@ def op_relation(arg_types, attrs):
     out_dtype = attrs.out_dtype if attrs.out_dtype else arg_types[0].dtype
     if attrs.data_layout == "NHWC":
         out_shape = [batch * out_h * out_w, out_c, wmma_m, wmma_n]
-    # print("out_shape: ", out_shape)
     return relay.TensorType(out_shape, out_dtype)
 
 

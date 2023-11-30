@@ -5,6 +5,7 @@ from ..graph import Node, find_topo_sort_priority
 from ..utils import CompileResult
 from .base_tunner import Tunner
 from .common import FusionGroup
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +34,23 @@ class Engine:
     def __init__(self, tunner: Tunner) -> None:
         self.tunner = tunner
 
+    def set_debug_nodes(self, ordered_nodes, names):
+        nodes = []
+        for node in ordered_nodes:
+            if node.name in names:
+                nodes.append(node)
+        return nodes
+
     def run(self, ordered_nodes: List[Node]) -> List[FusionGroup]:
         output_list = list(filter(lambda node : node.is_output(), ordered_nodes))
         ordered_nodes = find_topo_sort_priority(output_list)
-
+        # ordered_nodes = self.set_debug_nodes(ordered_nodes, ['ladder_perfect_matmul_29', 'layout_transform_reshape_reshape_add_30'])
+        # print("candidate nodes:",ordered_nodes)
         self.node2group = {} # map node to fused group
         self.node_topo_id = {ordered_nodes[i] : i for i in range(len(ordered_nodes))}
         fusion_groups = []
-        for node in ordered_nodes:
+        for node in tqdm(ordered_nodes, desc="Processing", ascii=False,
+                        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]"):
             if node in self.node2group or node.is_output() or node.is_placeholder():
                 continue
             fg = self._build_fusion_group(node)

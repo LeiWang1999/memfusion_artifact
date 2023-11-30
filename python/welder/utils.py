@@ -141,9 +141,12 @@ extern "C" int {symbol}({def_args}) {{
         try:
             ret = subprocess.run(command, timeout=timeout)
         except subprocess.TimeoutExpired:
+            print("Compile Timeout")
             return None
         if ret.returncode != 0:
+            print("Compile error")
             return None
+        
         self.lib_name = lib_name
 
     def load_lib(self):
@@ -255,12 +258,6 @@ extern "C" float profile({}) {{
     def __del__(self):
         self.close_lib()
 
-# def compile_and_load_parallel(cpresults, arch, timeout : float = None):
-#     libs = []
-#     for cpresult in cpresults:
-#         lib = cpresult.compile_and_load(arch, timeout)
-#         libs.append(lib)
-#     return list(libs)
 
 def compile_and_load_parallel(cpresults, arch, timeout : float = None):
     with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:

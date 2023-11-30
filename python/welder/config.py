@@ -86,12 +86,18 @@ class LadderConfig:
         self.propagate_inter_b = propagate_inter_b
         self.pipeline_stage = pipeline_stage
 
+class ConsistentConfig:
+    def __init__(self, is_a_consistent, is_b_consistent) -> None:
+        self.is_a_consistent = is_a_consistent
+        self.is_b_consistent = is_b_consistent
+
 
 class Config:
     def __init__(self) -> None:
         self.arch = None
         self.use_tc = None
         self.fast_decoding = False
+        self.ladder_compute_type = None
         self.compute_capability = None
         self.use_ladder = None
         # spacial axes tiling info
@@ -111,6 +117,7 @@ class Config:
         self.schedule_stages = None
         # Ladder
         self.ladder_config: Optional[LadderConfig] = None
+        self.consistent_config = None
         # Experimental
         self._raxis_order = []
         self._step = []

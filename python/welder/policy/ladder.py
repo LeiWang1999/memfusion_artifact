@@ -2,7 +2,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 from ..arch import Arch
-from ..config import Config, Stride, TileDict, LadderConfig
+from ..config import Config, Stride, TileDict, LadderConfig, ConsistentConfig
 from ..graph import IRNode, Node
 from .common import factorize, get_all_factors
 from .default import DefaultPolicy
@@ -114,8 +114,6 @@ class LadderPolicy(DefaultPolicy):
             else:
                 AK = input_shape[1] * input_shape[-1]
 
-        print(f"Ladder will consider the op as gemm M N K", M, N, K)
-
         if len(node.raxis) == 1:
             for k in node.raxis:
                 if output_dtype == 'float16':
@@ -128,7 +126,8 @@ class LadderPolicy(DefaultPolicy):
             for i, k in enumerate(node.raxis):
                 if i == 0:
                     if output_dtype == 'int32' or output_dtype == 'int8':
-                        result[k] = 64
+                        # the minumum k is 32
+                        result[k] = 64 if AK > 64 else 32
                         continue
                     if AK % 32 != 0 and AK % 16 == 0:
                         result[k] = 16
@@ -300,4 +299,10 @@ class LadderPolicy(DefaultPolicy):
         codegen_dict.complete_config(node)
         codegen_dict.pipeline_stage = td.pipeline_stage
         codegen_dict.ladder_config = LadderConfig(propagate_inter_a, propagate_inter_b, td.pipeline_stage)
+        consistent_configs = node.get_tag("consistent_config")
+        if consistent_configs:
+            codegen_dict.consistent_config = ConsistentConfig(consistent_configs[0], consistent_configs[1])
+        ladder_compute_type = node.get_tag("ladder_compute_type")
+        if ladder_compute_type:
+            codegen_dict.ladder_compute_type = ladder_compute_type
         return codegen_dict

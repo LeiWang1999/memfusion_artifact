@@ -213,14 +213,26 @@ class Tunner(object):
                 continue
             return best
         return None
-
+    
     def tune(self, nodes, local_connections=[], kernel_name="Fused"):
         if any([node.get_tag("skip") for node in nodes]):
             return None
+
         self.current_nodes = nodes
         self.local_connections = local_connections
         logger.info(f"Tuning {[node.name for node in self.current_nodes]}")
         output_nodes, input_desc, output_desc = _extract_subgraph(self.current_nodes, self.local_connections)
+        if len(output_nodes) > 1:
+            def _check_dims_is_the_same(shapes):
+                # the check should be put under multiple output case.
+                # check if all shapes are with the same dims
+                # for relay check in type_solver.cc:236
+                for shape in shapes:
+                    if len(shape) != len(shapes[0]):
+                        return False
+                return True
+            if not _check_dims_is_the_same([node.get_shape() for node in output_nodes]):
+                return None
         eliminate_memcpy(output_nodes)
         signature = subgraph_hash(output_nodes)
         if self.count_cache(signature):
@@ -236,7 +248,6 @@ class Tunner(object):
             return result
 
         policy_list = self.get_policy_list()
-        # configs = self.generate_configs(policy_list, output_nodes)
 
         try:
             configs = self.generate_configs(policy_list, output_nodes)
@@ -247,9 +258,11 @@ class Tunner(object):
         if len(configs) == 0:
             self.set_cache(signature, None)
             return None
+
         compile_results = self.generate_code(output_nodes, configs, kernel_name)
         for cpresult in compile_results:
             cpresult.set_io_desc(input_desc, output_desc)
+            # print(cpresult.code)
         compile_parallel(compile_results, self.arch, timeout=30)
         best = self.select_best(output_nodes, compile_results)
         self.set_cache(signature, best)

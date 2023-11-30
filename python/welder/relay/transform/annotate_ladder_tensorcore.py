@@ -13,9 +13,12 @@ class AnnotateLadderTensorCore(relay.ExprMutator):
         visitor = OpVisitor(self.arch)
         visitor.visit(func)
         if visitor.axis is not None:
-            print("ladder_config: ", visitor.ladder_config)
             func = func.with_attr("tensorCoreConfig", visitor.axis)
             func = func.with_attr("ladder_config", visitor.ladder_config)
+            if visitor.ladder_compute_type is not None:
+                func = func.with_attr("ladder_compute_type", visitor.ladder_compute_type)
+            if visitor.consistent is not None:
+                func = func.with_attr("consistent", visitor.consistent)
         return super().visit_function(func)
 
 class OpVisitor(relay.ExprVisitor):
@@ -24,6 +27,8 @@ class OpVisitor(relay.ExprVisitor):
         self.arch = arch
         self.axis = None
         self.ladder_config = None
+        self.ladder_compute_type = None
+        self.consistent = None
 
     def visit_call(self, call):
         if call.op.name in ["ladder.perfect_im2col_conv", "ladder.C2DImplicitGemm", "ladder.perfect_matmul", "ladder.perfect_quant_linear"]:
@@ -56,7 +61,6 @@ class OpVisitor(relay.ExprVisitor):
                 is_shape_verified = (M % 16 ==0 and K % 16 == 0 and N % 16 == 0)
                 if is_type_verified and is_shape_verified:
                     num_axis = int(len(call.checked_type.shape))
-                    print("num_axis: ", num_axis)
                     self.axis = (num_axis - 2, num_axis - 1)
                     self.ladder_config = (True, True, 2) if can_propagate else (False, False)
             elif call.op.name == "ladder.C2DImplicitGemm":
@@ -82,8 +86,22 @@ class OpVisitor(relay.ExprVisitor):
                 num_axis = int(len(call.checked_type.shape))
                 self.axis = (num_axis - 2, num_axis - 1)
                 can_propagate = call.attrs.can_propagate
-                self.ladder_config = (True, True, pipleline_stage) if can_propagate else (False, False)
+                if call.attrs.format == "mxfp":
+                    self.ladder_config = (True, True, 2) # for smem issues about bf16 accum, we set pipeline_stage to 2
+                else:
+                    self.ladder_config = (True, True, pipleline_stage) if can_propagate else (False, False)
             elif call.op.name == "ladder.quant_linear":
                 self.ladder_config = (False, False)
-
+        elif call.op.name in ["ladder.perfect_im2col_quant_conv"]:
+            A_shape = call.args[0].checked_type.shape
+            B_shape = call.args[1].checked_type.shape
+            num_axis = int(len(call.checked_type.shape))
+            if call.attrs.format == "int4b":
+                self.ladder_compute_type = "int4"
+            elif call.attrs.format == "mxfp":
+                self.ladder_compute_type = "mxfp"
+                self.consistent = (True, False) # todo(lei):special set fpa mxfpb for benchmark
+            self.axis = (num_axis - 2, num_axis - 1)
+            self.ladder_config = (True, True, 2)
+        
         return super().visit_call(call)

@@ -30,10 +30,11 @@ class WelderTunePass(relay.ExprMutator):
 
         ordered_nodes = extractor.ordered_nodes
         node_map = extractor.node_map
-        # print("ordered_nodes:",ordered_nodes)
-        # print(tune_node(ordered_nodes, ['layout_transform_nn_batch_flatten_37']))
+        print("candidate nodes:",ordered_nodes)
+        # ordered_nodes = self.set_debug_nodes(ordered_nodes, ['ladder_perfect_matmul_29', 'layout_transform_reshape_reshape_add_30'])
+        # print(tune_node(ordered_nodes, ['ladder_perfect_im2col_quant_conv_cast_5']))
         # raise NotImplementedError()
-
+        
         tunner = MultiProcTunner(ordered_nodes, arch=self.arch, device="cuda:0", topk=self.topk)
         engine = Engine(tunner)
         # tunner.load_cache("a.pkl")
@@ -106,7 +107,7 @@ class WelderTunePass(relay.ExprMutator):
                     else:
                         self.memo_map[original_call] = relay.TupleGetItem(call, i)
         mod.update_func(mod.get_global_var("main"), self.visit(mod["main"]))
-        mod = relay.transform.InferType()(mod)
+        # mod = relay.transform.InferType()(mod)
         return mod
 
 class TileGraphExtractor(relay.ExprVisitor):
@@ -146,6 +147,10 @@ class TileGraphExtractor(relay.ExprVisitor):
                 options["tensorCoreConfig"] = [int(x) for x in call.op.attrs["tensorCoreConfig"]]
             if call.op.attrs and "ladder_config" in call.op.attrs:
                 options["ladder_config"] = call.op.attrs["ladder_config"]
+            if call.op.attrs and "ladder_compute_type" in call.op.attrs:
+                options["ladder_compute_type"] = call.op.attrs["ladder_compute_type"]
+            if call.op.attrs and "consistent" in call.op.attrs:
+                options["consistent"] = call.op.attrs["consistent"]
             node = IRNode(node_inputs, args, op_name)
             if call.op.attrs and "relay.reshape_only" in call.op.attrs and call.op.attrs["relay.reshape_only"]:
                 options["memcpy"] = True
