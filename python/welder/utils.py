@@ -191,7 +191,6 @@ extern "C" float profile({}) {{
     if (hipGetLastError() != hipSuccess) return -1;
     hipEventElapsedTime(&ms, start, stop);
     int repeats = int(ceil(100.0 / ms));
-    if (repeats <= 3) repeats = 5;
     hipEventRecord(start, 0);
     for (int _ = 0; _ < repeats; _++)
         {};
@@ -241,7 +240,7 @@ extern "C" float profile({}) {{
         outputs = []
         for i, arg in enumerate(self.args):
             if isinstance(arg.op, tvm.te.ComputeOp):
-                outputs.append(torch_arrs[i].cpu().numpy())
+                outputs.append(torch_arrs[i])
         return outputs
 
     def close_lib(self):

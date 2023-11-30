@@ -29,16 +29,18 @@ def op_compute(attrs, inputs, output_type):
     is_b = attrs.is_b
     trans = attrs.transpose
     is_inverse = attrs.is_inverse
-    instruction_sets = 'cuda'
-    if not is_b:
-        transform_func = A_global_16x16_to_shared_load_16x16_layout
+    if hasattr(attrs, "transform_func") and attrs.transform_func is not None:
+        transform_func = attrs.transform_func
     else:
-        if trans:
-            transform_func = B_global_16x16_to_shared_load_16x16_layout
-        else:
+        if not is_b:
             transform_func = A_global_16x16_to_shared_load_16x16_layout
+        else:
+            if trans:
+                transform_func = B_global_16x16_to_shared_load_16x16_layout
+            else:
+                transform_func = A_global_16x16_to_shared_load_16x16_layout
     if is_inverse:
-        index_map = IndexMap.from_func(A_global_16x16_to_shared_load_16x16_layout)
+        index_map = IndexMap.from_func(transform_func)
         inversed_index_map = index_map.inverse([16, 16])
         def fcompute(*args):
             warp_i, warp_j = args[-2:]
@@ -49,7 +51,7 @@ def op_compute(attrs, inputs, output_type):
         def fcompute(*args):
             warp_i, warp_j = args[-2:]
             spatial_args = args[:-2]
-            permutate_i, permutate_j = transform_func(warp_i, warp_j)
+            permutate_i, permutate_j = transform_func.map_indices([warp_i, warp_j])
             new_index = (*spatial_args, permutate_i, permutate_j)
             return inputs[0][new_index]
     out = te.compute(out_shape, fcompute, "ladder_layout_transform")

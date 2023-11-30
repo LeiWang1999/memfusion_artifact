@@ -117,7 +117,7 @@ def update_lib(lib, arch, lib_path):
         lib.export_library(lib_path, fcompile=call_cuda_compile, options=options)
     elif "ROCm" in arch.platform:
         compute_version = arch.compute_capability
-        options = ["-std=c++17", "-fPIC", "--shared", "-O3", "--offload-arch={}".format(compute_version)]
+        options = ["-std=c++17", "-O3", "--offload-arch={}".format(compute_version)]
         lib.export_library(lib_path, fcompile=call_hip_compile, options=options)
     else:
         raise NotImplementedError(arch.platform)

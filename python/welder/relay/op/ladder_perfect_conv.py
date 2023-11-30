@@ -51,7 +51,7 @@ def op_compute(attrs, inputs, output_type):
     assert len(inputs[0].shape) == 6, "data arg number mismatch!"
     
     data, kernel = inputs
-
+    out_dtype = attrs.out_dtype if attrs.out_dtype else data.dtype
     # padding
     pad_top, pad_left, pad_bottom, pad_right = get_pad(attrs.padding)
     pad_shape = list(data.shape)
@@ -119,7 +119,7 @@ def op_compute(attrs, inputs, output_type):
             )
         C = te.compute(
             [n_size, out_c, wmma_m, wmma_n],
-            lambda i, j, ii, jj: te.sum(data[i, k_axis, ii, wk_axis] * kernel[k_axis, j, wk_axis, jj], axis=[k_axis, wk_axis]),
+            lambda i, j, ii, jj: te.sum(data[i, k_axis, ii, wk_axis].astype(out_dtype) * kernel[k_axis, j, wk_axis, jj].astype(out_dtype), axis=[k_axis, wk_axis]),
             "T_conv",
         )
 

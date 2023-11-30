@@ -66,7 +66,11 @@ class TCPolicy(DefaultPolicy):
             if use_double_buffer: value *= 2
         return value, cached_tensors
 
-    def _assign_reduce_step(self, node):
+    def _assign_pipeline_stage(self, nodes: List[Node]):
+        pipeline_stage = 2 # always use 2 stage for tensorcore template
+        return pipeline_stage
+    
+    def _assign_reduce_step(self, node, pipeline_stage:int = 1):
         if not node.get_tag("tensorCoreConfig"):
             return super()._assign_reduce_step(node)
         result = {}

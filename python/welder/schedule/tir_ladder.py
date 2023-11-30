@@ -1017,6 +1017,7 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
             HIP_MFMA_LOAD_16x16_B_TRANS_SHARED_f16_INTRIN,
             HIP_MFMA_f16f16f32_INTRIN,
             HIP_MFMA_f16f16f32_TRANS_INTRIN,
+            HIP_MFMA_STORE_GLOBAL_16x16_f16_INTRIN,
             HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN,
             HIP_MFMA_STORE_GLOBAL_16x16_f32_INTRIN,
         )
@@ -1077,7 +1078,7 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
         # chunk = 2
         # stage = 1
         # use_async = 0
-        # raster = 16
+        # raster = 10
         
         block_i, i, ii = sch.split(i, factors=[None, block_row_warps, warp_row_tiles])
         block_j, j, jj = sch.split(j, factors=[None, block_col_warps, warp_col_tiles])
@@ -1140,8 +1141,17 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
 
         write_sch(sch, log_path, "schedule_compute_inline")
 
-        a_prmt_func = thread_id_shared_access_64x4_to_16x16_layout_A
-        b_prmt_func = thread_id_shared_access_64x4_to_16x16_layout_B
+        def a_prmt_func(i, j):
+            _id = i * 16 + j
+            thread_id = _id // 4
+            local_id = _id % 4
+            return thread_id_shared_access_64x4_to_16x16_layout_A(thread_id, local_id)
+
+        def b_prmt_func(i, j):
+            _id = i * 16 + j
+            thread_id = _id // 4
+            local_id = _id % 4
+            return thread_id_shared_access_64x4_to_16x16_layout_B(thread_id, local_id)
 
         def A_permutation(*args):
             kernel_i, kernel_j = args[-2], args[-1]
@@ -1220,7 +1230,12 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
         load_b_intrin_trans = HIP_MFMA_LOAD_16x16_B_TRANS_SHARED_f16_INTRIN
         compute_intrin = HIP_MFMA_f16f16f32_INTRIN
         compute_trans_intrin = HIP_MFMA_f16f16f32_TRANS_INTRIN
-        store_intrin = HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN if has_output_op else HIP_MFMA_STORE_GLOBAL_16x16_f32_INTRIN
+        if self.output_args[0].dtype == "float16":
+            store_intrin = HIP_MFMA_STORE_GLOBAL_16x16_f16_INTRIN
+        elif self.output_args[0].dtype == "float32":
+            store_intrin = HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN if has_output_op else HIP_MFMA_STORE_GLOBAL_16x16_f32_INTRIN
+        else:
+            raise NotImplementedError("dtype {} not supported".format(self.output_args[0].dtype))
         init_block_b = sch.decompose_reduction(C, ko)
         write_sch(sch, log_path, "decompose_reduction")
         init_block_b_loops = sch.get_loops(init_block_b)
@@ -1437,7 +1452,7 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
         is_a_consistent = self.args[0].shape[-1] == wmma_k
         is_b_consistent = self.args[1].shape[-1] == wmma_k
         is_consistent = is_a_consistent and is_b_consistent
-        if self.config.arch.platform == "CUDA":
+        if self.config.arch.platform == "cuda":
             if is_consistent:
                 return self.schedule_consistent()
             else:

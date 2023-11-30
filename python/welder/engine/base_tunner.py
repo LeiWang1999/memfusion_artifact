@@ -189,7 +189,7 @@ class Tunner(object):
                 future = self.profiler.submit(profiler.call_profile, cpresult.lib_name, cpresult.args, self.device)
                 try:
                     cpresult.latency = future.result()
-                except ChildProcessError:
+                except Exception:
                     cpresult.latency = 1e8
                 finally:
                     cpresult.remove_lib()
@@ -250,7 +250,6 @@ class Tunner(object):
         compile_results = self.generate_code(output_nodes, configs, kernel_name)
         for cpresult in compile_results:
             cpresult.set_io_desc(input_desc, output_desc)
-            # print(cpresult.code)
         compile_parallel(compile_results, self.arch, timeout=30)
         best = self.select_best(output_nodes, compile_results)
         self.set_cache(signature, best)

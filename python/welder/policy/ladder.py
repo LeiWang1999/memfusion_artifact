@@ -1,7 +1,6 @@
 from typing import Dict, List, Tuple
 
 import numpy as np
-
 from ..arch import Arch
 from ..config import Config, Stride, TileDict, LadderConfig
 from ..graph import IRNode, Node
@@ -40,20 +39,24 @@ class LadderPolicy(DefaultPolicy):
 
     def infer_node_smem_usage(self, td: TileDict, node: IRNode):
         value, cached_tensors = super().infer_node_smem_usage(td, node)
-        ladder_configs = node.get_tag("ladder_config")
-        if ladder_configs:
-            pipeline_stage = ladder_configs[2] if len(ladder_configs) > 2 else 1
-            value *= pipeline_stage
+        value *= td.pipeline_stage
         return value, cached_tensors
+    
+    def _assign_pipeline_stage(self, nodes: List[Node]):
+        pipeline_stage = 1
+        for node in self.ordered_nodes:
+            ladder_configs = node.get_tag("ladder_config")
+            if ladder_configs:
+                pipeline_stage = ladder_configs[2] if len(ladder_configs) > 2 else -1
+        return pipeline_stage
 
-    def _assign_reduce_step(self, node):
+    def _assign_reduce_step(self, node, pipeline_stage: int = 1):
         if not node.get_tag("tensorCoreConfig"):
             return super()._assign_reduce_step(node)
         result = {}
         output_shape = node.reduce_op.output(0).shape
         output_dtype = node.reduce_op.output(0).dtype
         ladder_configs = node.get_tag("ladder_config")
-        pipeline_stage = ladder_configs[2] if len(ladder_configs) > 2 else 1
         # assume A is always not transposed.
         is_matmul = (output_shape[-1] == self.wmma_n and output_shape[-2] == self.wmma_n)
 
@@ -110,8 +113,8 @@ class LadderPolicy(DefaultPolicy):
                 AK = input_shape[3] * input_shape[-1]
             else:
                 AK = input_shape[1] * input_shape[-1]
-        print(input_shape)
-        print(f"Considering a gemm problem M N K CHANNEL", M, N, K)
+
+        print(f"Ladder will consider the op as gemm M N K", M, N, K)
 
         if len(node.raxis) == 1:
             for k in node.raxis:
@@ -281,8 +284,7 @@ class LadderPolicy(DefaultPolicy):
             warp_tile[dim_order[0]] *= factor
 
         ladder_configs = node.get_tag("ladder_config")
-        propagate_inter_a, propagate_inter_b = ladder_configs[0:2]
-        pipeline_stage = ladder_configs[2] if len(ladder_configs) > 2 else 1
+        propagate_inter_a, propagate_inter_b = ladder_configs[:2]
         codegen_dict = Config()
         codegen_dict.arch = self.arch
         codegen_dict.fast_decoding = node.get_tag("fast_decoding")
@@ -296,6 +298,6 @@ class LadderPolicy(DefaultPolicy):
         codegen_dict.raster_factor = self._compute_thread_raster_factor(node, td)
         codegen_dict.schedule_stages = [stage.name for stage in node._schedule_compute_stages]
         codegen_dict.complete_config(node)
-        codegen_dict.pipeline_stage = pipeline_stage
-        codegen_dict.ladder_config = LadderConfig(propagate_inter_a, propagate_inter_b, pipeline_stage)
+        codegen_dict.pipeline_stage = td.pipeline_stage
+        codegen_dict.ladder_config = LadderConfig(propagate_inter_a, propagate_inter_b, td.pipeline_stage)
         return codegen_dict

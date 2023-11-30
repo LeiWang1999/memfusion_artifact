@@ -1284,7 +1284,7 @@ def get_mfma_load_intrin(k_dim=4, dtype="float32", scope="shared", is_b=False, t
             T.reads(memory[0:row_dim, 0:col_dim])
             T.writes(reg[0:WARP_SIZE, 0:local_size])
             for tx in T.thread_binding(WARP_SIZE, "threadIdx.x"):
-                for local_id in T.vectorized(local_size):
+                for local_id in T.serial(local_size):
                     # row, col = T.meta_var(reverse_index_map(tx, local_id))
                     # reg[tx, local_id] = memory[row, col]
                     reg[tx, local_id] = memory[tx // 4, tx % 4 * 4 + local_id]
@@ -1451,7 +1451,7 @@ def get_mfma_intrin(k_dim, in_dtype="float32", out_dtype="float32", b_transposed
     return (mfma_sync_desc, mfma_sync_impl_integer) if in_dtype == "int8" else (mfma_sync_desc, mfma_sync_impl_float)
 
 
-def get_mfma_store_intrin(local_size=4, dtype="float32", scope="global"):
+def get_mfma_store_intrin(local_size=4, dtype="float32", scope="global", out_dtype="float32"):
 
     index_map = shared_16x16_to_local_64x4_layout_C
 
@@ -1459,7 +1459,7 @@ def get_mfma_store_intrin(local_size=4, dtype="float32", scope="global"):
     def mfma_store_desc(a: T.handle, c: T.handle) -> None:
         C_warp = T.match_buffer(
             a, [WARP_SIZE, local_size], dtype=dtype, scope="warp")
-        C = T.match_buffer(c, [M_DIM, N_DIM], dtype=dtype, scope=scope)
+        C = T.match_buffer(c, [M_DIM, N_DIM], dtype=out_dtype, scope=scope)
 
         with T.block("root"):
             T.reads(C_warp[0:WARP_SIZE, 0:local_size])
@@ -1470,7 +1470,7 @@ def get_mfma_store_intrin(local_size=4, dtype="float32", scope="global"):
                     thread_id, local_id = T.meta_var(index_map(v0, v1))
                     T.reads(C_warp[thread_id, local_id])
                     T.writes(C[v0, v1])
-                    C[v0, v1] = C_warp[thread_id, local_id]
+                    C[v0, v1] = C_warp[thread_id, local_id].astype(out_dtype)
 
     @T.prim_func
     def mfma_store_impl(a: T.handle, c: T.handle) -> None:
@@ -1480,7 +1480,7 @@ def get_mfma_store_intrin(local_size=4, dtype="float32", scope="global"):
             a, [WARP_SIZE, local_size], dtype=dtype, scope="warp", offset_factor=16
         )
         C = T.match_buffer(
-            c, [M_DIM, N_DIM], dtype=dtype, scope=scope, offset_factor=1, strides=[s0, s1]
+            c, [M_DIM, N_DIM], dtype=out_dtype, scope=scope, offset_factor=1, strides=[s0, s1]
         )
 
         with T.block("root"):
@@ -1496,7 +1496,7 @@ def get_mfma_store_intrin(local_size=4, dtype="float32", scope="global"):
                     C_warp.data,
                     C_warp.elem_offset // (WARP_SIZE),
                     s0,
-                    dtype=dtype,
+                    dtype=out_dtype,
                 )
             )
 
@@ -1562,6 +1562,11 @@ TensorIntrin.register(HIP_MFMA_STORE_16x16_s32_INTRIN, *
 HIP_MFMA_STORE_GLOBAL_16x16_f32_INTRIN = "hip_mfma_store_global_16x16_f32"
 TensorIntrin.register(HIP_MFMA_STORE_GLOBAL_16x16_f32_INTRIN, *
                       get_mfma_store_intrin(4, "float32", "global"))
+
+
+HIP_MFMA_STORE_GLOBAL_16x16_f16_INTRIN = "hip_mfma_store_global_16x16_f16"
+TensorIntrin.register(HIP_MFMA_STORE_GLOBAL_16x16_f16_INTRIN, *
+                      get_mfma_store_intrin(4, "float32", "global", "float16"))
 
 HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN = "hip_mfma_store_shared_16x16_f32"
 TensorIntrin.register(HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN, *

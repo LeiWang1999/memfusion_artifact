@@ -1,5 +1,7 @@
 from tvm import relay, ir
 import numpy as np
+import welder
+from tvm.tir import IndexMap
 
 class UsageTracer(relay.ExprVisitor):
     def __init__(self):
@@ -19,9 +21,13 @@ class UsageTracer(relay.ExprVisitor):
 
 @relay.transform.function_pass(opt_level=0, required=["InferType"])
 class LadderRewriteInceptionLayout(relay.ExprMutator):
-    def __init__(self):
+    def __init__(self, arch=None):
         super().__init__()
         self.node_output_map = {}
+        if arch==None:
+            self.arch = welder.arch.__getattribute__('cuda')()
+        else:
+            self.arch=arch
 
     def transform_function(self, func, mod, ctx):
         tracer = UsageTracer()
@@ -49,7 +55,7 @@ class LadderRewriteInceptionLayout(relay.ExprMutator):
                     the_relu_or_maxpool = lhs if lhs_is_relu or lhs_is_maxpool else rhs
                     def detect_layout_transform(node):
                         output_nodes = self.node_output_map[node]
-                        assert len(output_nodes) == 2
+                        assert len(output_nodes) == 2, f"The output_nodes is {output_nodes}"
                         # get the output_node that is not node
                         the_other = output_nodes[0] if output_nodes[0] != call else output_nodes[1]
                         # detect if the_other is layout_transform
@@ -59,7 +65,6 @@ class LadderRewriteInceptionLayout(relay.ExprMutator):
                     
                     layout_transform = detect_layout_transform(the_relu_or_maxpool)
                     if layout_transform:
-                        print("layout_transform is detected")
                         the_other = lhs if rhs_is_relu or rhs_is_maxpool else rhs
                         the_relu_or_maxpool_transform = relay.layout_transform(the_relu_or_maxpool, "NHWC", "NHWC16n16c")
                         the_other_transform = relay.layout_transform(the_other, "NHWC", "NHWC16n16c")
@@ -67,29 +72,75 @@ class LadderRewriteInceptionLayout(relay.ExprMutator):
                         assert len(layout_transform_outputs) == 1, "layout_transform should only have one output for now"
                         layout_transform_output = layout_transform_outputs[0]
                         if isinstance(layout_transform_output.op, ir.Op) and layout_transform_output.op.name == "ladder.layout_transform":
-                            print("layout_transform_output is ladder.layout_transform")
-                            # insert a same layout_transform and an inversed layout_transform
-                            attrs = ir.make_node(
-                                "DictAttrs",
-                                is_b=layout_transform_output.attrs.is_b,
-                                transpose=layout_transform_output.attrs.transpose,
-                                is_inverse=layout_transform_output.attrs.is_inverse,
-                            )
-                            transform_data = relay.Call(
-                                relay.op.get("ladder.layout_transform"), [the_relu_or_maxpool_transform], attrs
-                            )
-                            
-                            attrs = ir.make_node(
-                                "DictAttrs",
-                                is_b=layout_transform_output.attrs.is_b,
-                                transpose=layout_transform_output.attrs.transpose,
-                                is_inverse=True,
-                            )
-                            the_relu_or_maxpool_transform = relay.Call(
-                                relay.op.get("ladder.layout_transform_inverse"), [transform_data], attrs
-                            )
-                            
-                        add_node = relay.add(the_relu_or_maxpool_transform, the_other_transform)
-                        return super().visit_call(relay.layout_transform(add_node, "NHWC16n16c", "NHWC"))
+                            if self.arch.platform == "cuda":
+                                # insert a same layout_transform and an inversed layout_transform
+                                attrs = ir.make_node(
+                                    "DictAttrs",
+                                    is_b=layout_transform_output.attrs.is_b,
+                                    transpose=layout_transform_output.attrs.transpose,
+                                    is_inverse=layout_transform_output.attrs.is_inverse,
+                                )
+                                transform_data = relay.Call(
+                                    relay.op.get("ladder.layout_transform"), [the_relu_or_maxpool_transform], attrs
+                                )
+                                
+                                attrs = ir.make_node(
+                                    "DictAttrs",
+                                    is_b=layout_transform_output.attrs.is_b,
+                                    transpose=layout_transform_output.attrs.transpose,
+                                    is_inverse=True,
+                                )
+                                the_relu_or_maxpool_transform = relay.Call(
+                                    relay.op.get("ladder.layout_transform_inverse"), [transform_data], attrs
+                                )
+                            elif "ROCm" in self.arch.platform:
+                                # todo(leiwang): this is a trick to evaluate the correctness of the layout transform
+                                def thread_id_shared_access_64x4_to_16x16_layout_A(thread_id, local_id):
+                                    i = thread_id % 16
+                                    j = (thread_id // 16) * 4 + local_id
+                                    return i, j
+
+                                def thread_id_shared_access_64x4_to_16x16_layout_B(thread_id, local_id):
+                                    i = local_id + (thread_id // 16) * 4
+                                    j = thread_id % 16
+                                    return i, j
+
+                                def a_prmt_func(i, j):
+                                    _id = i * 16 + j
+                                    thread_id = _id // 4
+                                    local_id = _id % 4
+                                    return thread_id_shared_access_64x4_to_16x16_layout_A(thread_id, local_id)
+
+                                def b_prmt_func(i, j):
+                                    _id = i * 16 + j
+                                    thread_id = _id // 4
+                                    local_id = _id % 4
+                                    return thread_id_shared_access_64x4_to_16x16_layout_B(thread_id, local_id)
+
+                                attrs = ir.make_node(
+                                    "DictAttrs",
+                                    is_b=layout_transform_output.attrs.is_b,
+                                    transpose=layout_transform_output.attrs.transpose,
+                                    is_inverse=False,
+                                    transform_func=IndexMap.from_func(a_prmt_func),
+                                )
+                                
+                                transform_data = relay.Call(
+                                    relay.op.get("ladder.layout_transform"), [the_relu_or_maxpool_transform], attrs
+                                )
+                                
+                                attrs = ir.make_node(
+                                    "DictAttrs",
+                                    is_b=layout_transform_output.attrs.is_b,
+                                    transpose=layout_transform_output.attrs.transpose,
+                                    is_inverse=True,
+                                    transform_func=IndexMap.from_func(a_prmt_func),
+                                )
+                                the_relu_or_maxpool_transform = relay.Call(
+                                    relay.op.get("ladder.layout_transform_inverse"), [transform_data], attrs
+                                )
+
+                            add_node = relay.add(the_relu_or_maxpool_transform, the_other_transform)
+                    return super().visit_call(relay.layout_transform(add_node, "NHWC16n16c", "NHWC"))
                 
         return super().visit_call(call)

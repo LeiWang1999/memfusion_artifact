@@ -2,7 +2,6 @@ import functools
 import math
 from queue import PriorityQueue
 from typing import Dict, Generator, Iterable, List
-
 import numpy as np
 import tvm
 
@@ -30,17 +29,20 @@ class DefaultPolicy:
                     is_topo_output = False
             if is_topo_output:
                 self.output_nodes.append(node)
-
+    
+    def _assign_pipeline_stage(self, nodes: List[Node]) -> int:
+        return 1 # by default, assign pipeline stage to 1
+    
     def emit_config(self, topk: int) -> List[Dict[Node, Config]]:
         try:
             base_tile = self.get_base_tile()
         except Exception as e:
-            print(e)
             return []
         if base_tile is None:
             return []
-        rstep_map = {node : self._assign_reduce_step(node) for node in self.ordered_nodes}
-        smem_tile_condidates = self.DFS_smem_tile(base_tile, topk, rstep_map)
+        pipeline_stage = self._assign_pipeline_stage(self.ordered_nodes)
+        rstep_map = {node : self._assign_reduce_step(node, pipeline_stage) for node in self.ordered_nodes}
+        smem_tile_condidates = self.DFS_smem_tile(base_tile, topk, rstep_map, pipeline_stage)
         results = []
         for td in smem_tile_condidates:
             if not self.check_tile_shape_isvalid(td):
@@ -60,9 +62,30 @@ class DefaultPolicy:
                 results.append(codegen_dicts)
                 if len(results) >= topk:break
             if len(results) >= topk:break
+        
+        # this is a trick when the ladder config is set to (True, True), we need to expand the results to multiple pipeline stages
+        if pipeline_stage < 0:
+            # expand the results to multiple pipeline stages
+            # deep copy results to stage2_results
+            stage2_results = []
+            for config in results:
+                # if the dict has key 'globals'
+                new_config = {}
+                if 'globals' in config:
+                    new_config['globals'] = copy.deepcopy(config['globals'])
+                for node in self.ordered_nodes:
+                    if node in config:
+                        new_config[node] = copy.deepcopy(config[node])
+                stage2_results.append(new_config)
+
+            for config in stage2_results:
+                for node in self.ordered_nodes:
+                    config[node].pipeline_stage = 2
+            results.extend(stage2_results)
+        
         return results
 
-    def DFS_smem_tile(self, init_tile, topk, rstep_map) -> Iterable[TileDict]:
+    def DFS_smem_tile(self, init_tile, topk, rstep_map, pipeline_stage:int = 1) -> Iterable[TileDict]:
         _steps = [get_all_factors(n) for n in self.output_nodes[0].get_space_dim()]
         steps = [step[step.index(t):] for step, t in zip(_steps, init_tile)]
         for i in range(len(steps)):
@@ -77,6 +100,7 @@ class DefaultPolicy:
             if tuple(tile) in visited_tiles:
                 return
             td = self.compute_tile_dict(tile, rstep_map)
+            td.pipeline_stage = 1 if pipeline_stage < 0 else pipeline_stage
             visited_tiles[tuple(tile)] = td
             if td.valid:
                 queue.put([prio(td), tile])
@@ -163,7 +187,7 @@ class DefaultPolicy:
             results[k] = all_factors
         return results
 
-    def _assign_reduce_step(self, node: IRNode):
+    def _assign_reduce_step(self, node: IRNode, pipeline_stage: int = 1):
         if len(node.raxis) == 0:
             return {}
         raxis = node.raxis

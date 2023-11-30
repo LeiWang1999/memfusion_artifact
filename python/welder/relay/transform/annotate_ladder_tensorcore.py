@@ -49,7 +49,9 @@ class OpVisitor(relay.ExprVisitor):
                         is_type_verified = False
                 if call.checked_type.dtype != "float16":
                     is_type_verified = False
-                
+                if "ROCm" in self.arch.platform:
+                    # todo(leiwang): for ROCm, we always set true currently.
+                    is_type_verified = True
                 is_shape_verified = True
                 is_shape_verified = (M % 16 ==0 and K % 16 == 0 and N % 16 == 0)
                 if is_type_verified and is_shape_verified:
@@ -72,7 +74,10 @@ class OpVisitor(relay.ExprVisitor):
                 num_axis = int(len(call.checked_type.shape))
                 self.axis = (num_axis - 2, num_axis - 1)
                 can_propagate = call.attrs.can_propagate
-                self.ladder_config = (True, True, pipleline_stage) if can_propagate else (False, False)
+                if "ROCm" in self.arch.platform:
+                    self.ladder_config = (True, True) if can_propagate else (False, False)
+                else:
+                    self.ladder_config = (True, True, pipleline_stage) if can_propagate else (False, False)
             elif call.op.name == "ladder.perfect_quant_linear":
                 num_axis = int(len(call.checked_type.shape))
                 self.axis = (num_axis - 2, num_axis - 1)
