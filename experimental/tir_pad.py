@@ -1,6 +1,6 @@
 import numpy as np
-import tvm
 import welder
+import tvm
 from tvm import te
 from welder.layout import *
 from welder.schedule.cutlass_intrin import *

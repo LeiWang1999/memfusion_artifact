@@ -62,7 +62,7 @@ class TileDict:
         self.output_strides_map = {}
         self.tensor_strides_map = {}
         self.use_cutlass_mma = {}
-
+        self.pipeline_stage = -1
         # analysis
         self.traffic = -1
         self.smem_cost = -1

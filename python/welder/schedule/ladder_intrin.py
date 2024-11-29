@@ -1426,6 +1426,7 @@ def get_mfma_load_intrin(k_dim=4, dtype="float32", scope="shared", is_b=False, t
     return mfma_load_desc, mfma_load_impl
 
 
+
 def get_mfma_intrin(k_dim, in_dtype="float32", out_dtype="float32", b_transposed=False):
 
     local_size = (M_DIM * k_dim) // WARP_SIZE
@@ -1444,12 +1445,15 @@ def get_mfma_intrin(k_dim, in_dtype="float32", out_dtype="float32", b_transposed
     else:
         raise ValueError("k_dim must be 4 or 16 currently")
 
+
     out_dtype_abbrv = {"float16": "f16",
                        "float32": "f32", "int8": "i8", "int32": "i32"}[out_dtype]
 
     in_dtype_abbrv = {"float16": "f16",
+                      "bfloat16": "bf16_1k",
                       "float32": "f32", "int8": "i8", "int32": "i32"}[in_dtype]
-
+    if in_dtype == "bfloat16":
+        in_dtype = "float16"
     mfma_suffix = f"{out_dtype_abbrv}_{M_DIM}x{N_DIM}x{k_dim}{in_dtype_abbrv}"
 
     def maybe_cast(v):
@@ -1570,10 +1574,10 @@ def get_mfma_intrin(k_dim, in_dtype="float32", out_dtype="float32", b_transposed
                     compute_in_dtype,
                     compute_in_dtype,
                     compute_out_dtype,
-                    T.call_intrin("int32", "tir.reinterpret", A.data),
-                    A.elem_offset,
-                    T.call_intrin("int32", "tir.reinterpret", B.data),
-                    B.elem_offset,
+                    A.data,
+                    A.elem_offset // (WARP_SIZE * local_size_out),
+                    B.data,
+                    B.elem_offset // (WARP_SIZE * local_size_out),
                     C.data,
                     C.elem_offset // (WARP_SIZE * local_size_out),
                     dtype=compute_out_dtype,
@@ -1634,7 +1638,6 @@ def get_mfma_store_intrin(local_size=4, dtype="float32", scope="global", out_dty
 
     return mfma_store_desc, mfma_store_impl
 
-
 HIP_MFMA_fill_16x16_f32_INTRIN = "HIP_mfma_fill_16x16_f32"
 TensorIntrin.register(HIP_MFMA_fill_16x16_f32_INTRIN, *
                       get_mma_fill_intrin("float32", 4))
@@ -1649,6 +1652,9 @@ TensorIntrin.register(HIP_MFMA_LOAD_16x16_A_SHARED_s8_INTRIN, *
 HIP_MFMA_LOAD_16x16_B_SHARED_s8_INTRIN = "hip_mfma_load_b_16x16_shared_s8"
 TensorIntrin.register(HIP_MFMA_LOAD_16x16_B_SHARED_s8_INTRIN, *
                       get_mfma_load_intrin(16, "int8", "shared", is_b=True))
+HIP_MFMA_LOAD_16x16_B_TRANS_SHARED_s8_INTRIN = "hip_mfma_load_b_trans_16x16_shared_s8"
+TensorIntrin.register(HIP_MFMA_LOAD_16x16_B_TRANS_SHARED_s8_INTRIN, *
+                      get_mfma_load_intrin(16, "int8", "shared", is_b=True, transposed=True))
 
 HIP_MFMA_LOAD_16x16_A_SHARED_f16_INTRIN = "hip_mfma_load_16x16_a_shared_f16"
 TensorIntrin.register(HIP_MFMA_LOAD_16x16_A_SHARED_f16_INTRIN, *
@@ -1683,27 +1689,57 @@ HIP_MFMA_f16f16f32_TRANS_INTRIN = "hip_mfma_f16f16f32_trans"
 TensorIntrin.register(HIP_MFMA_f16f16f32_TRANS_INTRIN, *
                       get_mfma_intrin(16, "float16", "float32", b_transposed=True))
 
+HIP_MFMA_bf16bf16f32_TRANS_INTRIN = "hip_mfma_bf16bf16f32_trans"
+TensorIntrin.register(HIP_MFMA_bf16bf16f32_TRANS_INTRIN, *
+                      get_mfma_intrin(16, "bfloat16", "float32", b_transposed=True))
+
 HIP_MFMA_s8s8s32_INTRIN = "hip_mfma_s8s8s32"
 TensorIntrin.register(HIP_MFMA_s8s8s32_INTRIN, *
                       get_mfma_intrin(16, "int8", "int32"))
 
-HIP_MFMA_STORE_16x16_s32_INTRIN = "hip_mfma_store_16x16_s32"
-TensorIntrin.register(HIP_MFMA_STORE_16x16_s32_INTRIN, *
-                      get_mfma_store_intrin(4, "int32", "global"))
 
-HIP_MFMA_STORE_GLOBAL_16x16_f32_INTRIN = "hip_mfma_store_global_16x16_f32"
+HIP_MFMA_s8s8s32_TRANS_INTRIN = "hip_mfma_s8s8s32_trans"
+TensorIntrin.register(HIP_MFMA_s8s8s32_TRANS_INTRIN, *
+                      get_mfma_intrin(16, "int8", "int32", b_transposed=True))
+
+HIP_MFMA_STORE_GLOBAL_16x16_s32_INTRIN = "hip_mfma_store_16x16_global_s32"
+TensorIntrin.register(HIP_MFMA_STORE_GLOBAL_16x16_s32_INTRIN, *
+                      get_mfma_store_intrin(4, "int32", "global", "int32"))
+
+HIP_MFMA_STORE_SHARED_16x16_s32_INTRIN = "hip_mfma_store_16x16_shared_s32"
+TensorIntrin.register(HIP_MFMA_STORE_SHARED_16x16_s32_INTRIN, *
+                      get_mfma_store_intrin(4, "int32", "shared", "int32"))
+
+HIP_MFMA_STORE_GLOBAL_16x16_f32_INTRIN = "hip_mfma_store_16x16_f32_global"
 TensorIntrin.register(HIP_MFMA_STORE_GLOBAL_16x16_f32_INTRIN, *
                       get_mfma_store_intrin(4, "float32", "global"))
+
+HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN = "hip_mfma_store_16x16_f32_shared"
+TensorIntrin.register(HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN, *
+                      get_mfma_store_intrin(4, "float32", "shared"))
+
+HIP_MFMA_LOAD_16x16_A_SHARED_DYN_f16_INTRIN = "hip_mfma_load_16x16_a_shared.dyn_f16"
+TensorIntrin.register(HIP_MFMA_LOAD_16x16_A_SHARED_DYN_f16_INTRIN, *
+                      get_mfma_load_intrin(16, "float16", "shared.dyn"))
+HIP_MFMA_LOAD_16x16_B_SHARED_DYN_f16_INTRIN = "hip_mfma_load_b_16x16_shared.dyn_f16"
+TensorIntrin.register(HIP_MFMA_LOAD_16x16_B_SHARED_DYN_f16_INTRIN, *
+                      get_mfma_load_intrin(16, "float16", "shared.dyn", is_b=True))
+HIP_MFMA_LOAD_16x16_B_TRANS_SHARED_DYN_f16_INTRIN = "hip_mfma_load_b_trans_16x16_shared.dyn_f16"
+TensorIntrin.register(HIP_MFMA_LOAD_16x16_B_TRANS_SHARED_DYN_f16_INTRIN, *
+                      get_mfma_load_intrin(16, "float16", "shared.dyn", is_b=True, transposed=True))
 
 
 HIP_MFMA_STORE_GLOBAL_16x16_f16_INTRIN = "hip_mfma_store_global_16x16_f16"
 TensorIntrin.register(HIP_MFMA_STORE_GLOBAL_16x16_f16_INTRIN, *
                       get_mfma_store_intrin(4, "float32", "global", "float16"))
 
+HIP_MFMA_STORE_SHARED_DYN_16x16_f32_INTRIN = "hip_mfma_store_16x16_f32_shared.dyn"
+TensorIntrin.register(HIP_MFMA_STORE_SHARED_DYN_16x16_f32_INTRIN, *
+                      get_mfma_store_intrin(4, "float32", "shared.dyn"))
+
 HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN = "hip_mfma_store_shared_16x16_f32"
 TensorIntrin.register(HIP_MFMA_STORE_SHARED_16x16_f32_INTRIN, *
                       get_mfma_store_intrin(4, "float32", "shared"))
-
 
 
 

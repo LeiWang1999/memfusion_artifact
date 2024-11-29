@@ -57,6 +57,13 @@ class Engine:
             fusion_groups.append(fg)
             logger = logging.getLogger(__name__)
             logger.info(f"Fusion group created: {fg.group_id} {[node.name for node in fg.nodes]}")
+        overall_latency = 0
+        for fg in fusion_groups:
+            if fg.cpresult is None:
+                continue
+            print(f"fuse group {fg.group_id}  {[node.name for node in fg.nodes]} latency {fg.cpresult.latency:.2f} ms")
+            overall_latency += fg.cpresult.latency
+        print(f"overall latency {overall_latency} ms")
         return fusion_groups
 
     def run_no_fusion(self, ordered_nodes: List[Node]) -> List[FusionGroup]:

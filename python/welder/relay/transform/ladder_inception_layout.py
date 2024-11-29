@@ -1,6 +1,6 @@
+import welder
 from tvm import relay, ir
 import numpy as np
-import welder
 from tvm.tir import IndexMap
 
 class UsageTracer(relay.ExprVisitor):
@@ -55,7 +55,7 @@ class LadderRewriteInceptionLayout(relay.ExprMutator):
                     the_relu_or_maxpool = lhs if lhs_is_relu or lhs_is_maxpool else rhs
                     def detect_layout_transform(node):
                         output_nodes = self.node_output_map[node]
-                        assert len(output_nodes) == 2, f"The output_nodes is {output_nodes}"
+                        assert len(output_nodes) == 2
                         # get the output_node that is not node
                         the_other = output_nodes[0] if output_nodes[0] != call else output_nodes[1]
                         # detect if the_other is layout_transform
@@ -140,7 +140,7 @@ class LadderRewriteInceptionLayout(relay.ExprMutator):
                                     relay.op.get("ladder.layout_transform_inverse"), [transform_data], attrs
                                 )
 
-                            add_node = relay.add(the_relu_or_maxpool_transform, the_other_transform)
-                    return super().visit_call(relay.layout_transform(add_node, "NHWC16n16c", "NHWC"))
+                                add_node = relay.add(the_relu_or_maxpool_transform, the_other_transform)
+                                return super().visit_call(relay.layout_transform(add_node, "NHWC16n16c", "NHWC"))
                 
         return super().visit_call(call)

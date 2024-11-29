@@ -82,7 +82,10 @@ class TIRLadderMMAPadScheduler2D(TIRSchedulerBase):
         if len(output_shape) == 2:  
             M = int(output_shape[0])
             N = int(output_shape[1])
-        elif len(output_shape) == 2:
+        elif len(output_shape) == 3:
+            M = int(output_shape[1])
+            N = int(output_shape[2])
+        elif len(output_shape) == 4:
             # nhwc or mn1616
             if is_matmul:
                 M = output_shape[0] * output_shape[2]
@@ -169,15 +172,18 @@ class TIRLadderMMAPadScheduler2D(TIRSchedulerBase):
             sch.get_loops(C_warp)[-3],
             preserve_unit_loops=True,
         )
-        def transform_out(i, j):
-            return (i // wmma_m, j // wmma_n, i % wmma_m, j % wmma_n)
+        def transform_out(*args):
+            i, j = args[-2], args[-1]
+            other_args = args[:-2]
+            return (*other_args, i // wmma_m, j // wmma_n, i % wmma_m, j % wmma_n)
+
         sch.transform_layout(C_warp, ("write", 0), transform_out)
         sch.transform_layout(C_warp, ("read", 0), transform_out)
         
         def schedule_shared_output(block):
             o_shared_fused = sch.fuse(*sch.get_loops(block)[-2:])
             _, o_shared_tx, o_shared_vi = sch.split(
-                o_shared_fused, factors=[None, warp_size, vec]
+                o_shared_fused, factors=[None, warp_size, 4]
             )     
             sch.vectorize(o_shared_vi)
             sch.bind(o_shared_tx, "threadIdx.x")
@@ -193,7 +199,7 @@ class TIRLadderMMAPadScheduler2D(TIRSchedulerBase):
                 vec = 4
             shared_fused = sch.fuse(*sch.get_loops(block)[-dims:])
             shared_ty, shared_tz, shared_inner, shared_tx, shared_vi = sch.split(
-                shared_fused, factors=[block_tile_M // warp_tile_M, block_tile_N // warp_tile_N, None, warp_size, vec])
+                shared_fused, factors=[block_tile_M // warp_tile_M, block_tile_N // warp_tile_N, None, warp_size, 4])
             sch.vectorize(shared_vi)
             sch.bind(shared_tx, "threadIdx.x")
             sch.bind(shared_ty, "threadIdx.y")

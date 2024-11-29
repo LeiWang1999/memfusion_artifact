@@ -213,7 +213,7 @@ class TIRReduceInterThreadScheduler(TIRSchedulerBase):
         sch.vectorize(block_local_b_v)
         if use_dp4a:
             vo, vi = sch.split(vk, [None, 4])
-        if B_decode_block:   
+        if B_decode_block and self.config.arch.platform == "cuda":   
             try:
                 if self.args[0].dtype == 'float16':
                     sch.tensorize(sch.get_loops(block_decode_B)[-1], LOP3_FAST_DECODE_INT4_TO_FP16_INTRIN)

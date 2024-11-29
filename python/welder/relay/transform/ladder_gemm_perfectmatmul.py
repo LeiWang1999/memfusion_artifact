@@ -1,6 +1,6 @@
+import welder
 from tvm import relay, ir
 import numpy as np
-import welder
 from tvm.tir import IndexMap
 
 
@@ -209,7 +209,9 @@ class LadderPerfectGemmTransform(relay.ExprMutator):
                     perfect_data = relay.Call(
                         relay.op.get("ladder.layout_transform"), [perfect_data], attrs
                     )
-                    assert transpose_b == True, "currently only support transpose_b == True"
+                    # assert transpose_b == True, "currently only support transpose_b == True"
+                    # if transpose_b == True:
+                    #     transpose_b = False
                     attrs = ir.make_node(
                         "DictAttrs",
                         is_b=True,

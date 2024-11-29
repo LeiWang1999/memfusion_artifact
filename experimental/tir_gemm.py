@@ -1,5 +1,5 @@
-import tvm
 import welder
+import tvm
 from tvm import te
 from welder.utils import CompileResult
 

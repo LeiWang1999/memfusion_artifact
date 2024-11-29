@@ -1,6 +1,6 @@
+import welder
 from tvm import relay, ir
 import numpy as np
-import welder
 from tvm.tir import IndexMap
 
 
@@ -80,15 +80,22 @@ class LadderConvImplicitGemm(relay.ExprMutator):
 
     def visit_call(self, call):
         if isinstance(call.op, ir.Op) and call.op.name == "nn.conv2d":
+            print("call.op.name: ", call.op.name)
+            print("self.arch.platform: ", self.arch.platform)
+            print("self.use_async_propagation: ", self.use_async_propagation)
             if call.attrs.groups > 1:
+                print("groups > 1, do not fuse")
                 return super().visit_call(call)
             if (call.attrs.data_layout, call.attrs.kernel_layout) not in [
                 ("NHWC", "HWIO")
             ]:
+                print("data_layout or kernel_layout is not supported")
                 return super().visit_call(call)
             for type in call.type_args:
                 if type.dtype != "float16":
+                    print("dtype is not float16")
                     return super().visit_call(call)
+            print("the op can be processed")
             # should pass if previous compute node is a conv node with 3 channels (this sort conv has performance issue when we use layout propagate)
             # Vulnerable Networks: VGG
             previous_fusible_node = self.node_previous_fusible_node[call]
@@ -108,10 +115,12 @@ class LadderConvImplicitGemm(relay.ExprMutator):
                 
                 return True
 
-            if check_not_fusbile(previous_fusible_node):
-                # print("previous_fusible_node: ", previous_fusible_node.op.name)
+            if check_not_fusbile(previous_fusible_node) and self.arch.platform == "cuda":
+                print("this is not a fusbile node")
                 return super().visit_call(call)
             
+            print("the op is fusable")
+
             warp_compute_tile_m = 16
             warp_compute_tile_n = 16
             warp_compute_tile_k = 16
@@ -134,6 +143,7 @@ class LadderConvImplicitGemm(relay.ExprMutator):
             kernel = self.visit(call.args[1])
             out_shape = call.checked_type.shape
 
+            print("get out_shape")
             # if the data's node has only one output, we can propagate the layout
             if batch_size % warp_compute_tile_m != 0 or in_channel % warp_compute_tile_n != 0 or out_channel % warp_compute_tile_k != 0:
                 if batch_size % warp_compute_tile_m != 0 or out_channel % warp_compute_tile_n != 0:
@@ -153,34 +163,13 @@ class LadderConvImplicitGemm(relay.ExprMutator):
                 return relay.reshape(gemm, out_shape)
 
             can_propagate = False
-
+            
             if self.use_async_propagation:
-                data_outputs = self.node_output_map[call.args[0]]
-                if len(data_outputs) == 1:
-                    can_propagate = True
-                else:
-                    can_propagate = True
-                    # print("args[0].op: ", call.args[0].op.name)
-                    # for output in self.node_output_map[call.args[0]]:
-                    #     print("output: ", output.op.name)
-                    #     if output.op.name != "nn.conv2d":
-                    #         can_propagate = False
-                # if not (M < 128 or N < 128):
-                #     can_propagate = False
-                # print(
-                #     "data.op.num_outputs: ",
-                #     len(self.node_output_map[call.args[0]]),
-                #     "data.name: ",
-                #     call.args[0].op.name,
-                #     "call.name: ",
-                #     call.op.name,
-                #     "can_propagate: ",
-                #     can_propagate,
-                # )
+                can_propagate = True
 
             perfect_data = relay.layout_transform(data, "NHWC", "NHWC16n16c")
             perfect_kernel = relay.layout_transform(kernel, "HWIO", "HWIO16i16o")
-            
+            print("can_propagate: ", can_propagate)
             if self.arch.platform == "cuda":
                 if can_propagate:
                     attrs = ir.make_node(
@@ -236,6 +225,7 @@ class LadderConvImplicitGemm(relay.ExprMutator):
                     return relay.layout_transform(out, "NHWC16n16c", "NHWC")
             
             elif "ROCm" in self.arch.platform:
+                print("using rocm and the can_propagate is: ", can_propagate)
                 if can_propagate:
                     # todo(leiwang): this is a trick to evaluate the correctness of the layout transform
                     def thread_id_shared_access_64x4_to_16x16_layout_A(thread_id, local_id):

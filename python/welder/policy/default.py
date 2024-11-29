@@ -4,7 +4,7 @@ from queue import PriorityQueue
 from typing import Dict, Generator, Iterable, List
 import numpy as np
 import tvm
-
+import copy
 from ..arch import Arch
 from ..bestfit import BestFit
 from ..config import Config, Stride, TileDict, ConsistentConfig
@@ -104,7 +104,6 @@ class DefaultPolicy:
             if tuple(tile) in visited_tiles:
                 return
             td = self.compute_tile_dict(tile, rstep_map)
-            td.pipeline_stage = 1 if pipeline_stage < 0 else pipeline_stage
             visited_tiles[tuple(tile)] = td
             if td.valid:
                 queue.put([prio(td), tile])
@@ -366,9 +365,10 @@ class DefaultPolicy:
 
         td.output_strides_map, td.tensor_strides_map = output_strides_map, tensor_strides_map
 
-    def compute_tile_dict(self, output_tile: List[int], rstep_map) -> TileDict:
+    def compute_tile_dict(self, output_tile: List[int], rstep_map, pipeline_stage=-1) -> TileDict:
         td = TileDict(output_tile)
         td.rstep_map = rstep_map
+        td.pipeline_stage = 1 if pipeline_stage < 0 else pipeline_stage
         td.traffic, td.tile_map = self._compute_memory_traffic(output_tile)
         td.smem_cost, td.cached_tensors_map = self._compute_shared_memory_usage(td)
         if td.smem_cost > self.arch.smem_cap:
@@ -500,6 +500,7 @@ class DefaultPolicy:
                 reduce_thread[target_ax] *= factor
 
         codegen_dict = Config()
+        codegen_dict.arch = self.arch
         codegen_dict.use_ladder = node.get_tag("ladder_config")
         codegen_dict.fast_decoding = node.get_tag("fast_decoding")
         codegen_dict.compute_capability = self.arch.compute_capability
