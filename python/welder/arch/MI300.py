@@ -12,5 +12,5 @@ class MI250:
         self.max_smem_usage = 65536
         self.bandwidth = [1300, 14000]
         self.platform = "ROCm-CDNA2"
-        self.compute_capability = "gfx90a"
-        self.target = tvm.target.Target("hip --mcpu=gfx90a")
+        self.compute_capability = "gfx942"
+        self.target = tvm.target.Target("hip --mcpu=gfx942")
