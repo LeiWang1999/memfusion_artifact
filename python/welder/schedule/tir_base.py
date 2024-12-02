@@ -51,9 +51,9 @@ class TIRSchedulerBase(SchedulerBase):
         if self.block_size[2] > 1:
             ax, tz = self.sche.split(ax, factors=[None, self.block_size[2]])
             self.sche.bind(tz, "threadIdx.z")
-        self.sche.unroll(ax)
-        if use_pragma_unroll:
-            self.sche.annotate(ax, "pragma_unroll_explicit", False)
+        # self.sche.unroll(ax)
+        # if use_pragma_unroll:
+        #     self.sche.annotate(ax, "pragma_unroll_explicit", False)
 
     def build(self, target) -> str:
         with tvm.transform.PassContext(config={"tir.add_lower_pass": self.passes, "tir.disable_cse_tir": True, "tir.use_async_copy": 1}):

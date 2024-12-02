@@ -165,9 +165,9 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
         ko, ki = sch.split(k, factors=[None, chunk])
         sch.reorder(block_i, block_j, i, j, ko, ki, ii, jj, kernel_i, kernel_j, kernel_k)
 
-        if self.sche.get_sref(ko).stmt.extent <= 32:
-            self.sche.unroll(ko)
-            sch.annotate(ko, "pragma_unroll_explicit", False) 
+        # if self.sche.get_sref(ko).stmt.extent <= 32:
+        #     self.sche.unroll(ko)
+        #     sch.annotate(ko, "pragma_unroll_explicit", False) 
 
         write_sch(sch, log_path, "BlockTile")
 
@@ -207,8 +207,8 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
             )     
             sch.vectorize(o_shared_vi)
             sch.bind(o_shared_tx, "threadIdx.x")
-            sch.unroll(oo)
-            sch.annotate(oo, "pragma_unroll_explicit", False)
+            # sch.unroll(oo)
+            # sch.annotate(oo, "pragma_unroll_explicit", False)
         if shared_cache_c:
             schedule_shared_output(C_shared)
         
@@ -262,9 +262,9 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
             sch.bind(shared_tx, "threadIdx.x")
             sch.bind(shared_ty, "threadIdx.y")
             sch.bind(shared_tz, "threadIdx.z")
-            self.sche.unroll(shared_inner)
-            if use_pragma_unroll:
-                self.sche.annotate(shared_inner, "pragma_unroll_explicit", False)
+            # self.sche.unroll(shared_inner)
+            # if use_pragma_unroll:
+            #     self.sche.annotate(shared_inner, "pragma_unroll_explicit", False)
 
         cooperative_fetch(AS, dims=4, vec=vecA, use_pragma_unroll=True, force_async_copy=(propagate_inter_a and not propagate_inter_b))
         cooperative_fetch(BS, dims=4, vec=vecB, use_pragma_unroll=True, force_async_copy=(propagate_inter_b and not propagate_inter_a))
@@ -321,8 +321,8 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
         write_sch(sch, log_path, "decompose_reduction")
         init_block_b_loops = sch.get_loops(init_block_b)
         init_block_b_i, init_block_b_j = sch.get_loops(init_block_b)[-4:-2]
-        sch.annotate(init_block_b_i, "pragma_unroll_explicit", False)
-        sch.annotate(init_block_b_j, "pragma_unroll_explicit", False)
+        # sch.annotate(init_block_b_i, "pragma_unroll_explicit", False)
+        # sch.annotate(init_block_b_j, "pragma_unroll_explicit", False)
         sch.tensorize(sch.get_loops(init_block_b)[-2], init_intrin)
         sch.tensorize(
             sch.get_loops(AW)[-2], load_a_intrin
@@ -478,8 +478,8 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
             )     
             sch.vectorize(o_shared_vi)
             sch.bind(o_shared_tx, "threadIdx.x")
-            sch.unroll(oo)
-            sch.annotate(oo, "pragma_unroll_explicit", False)
+            # sch.unroll(oo)
+            # sch.annotate(oo, "pragma_unroll_explicit", False)
         
         if shared_cache_c:
             schedule_shared_output(C_shared)
@@ -531,9 +531,9 @@ class TIRLadderMMAScheduler4D(TIRSchedulerBase):
             sch.bind(shared_tx, "threadIdx.x")
             sch.bind(shared_ty, "threadIdx.y")
             sch.bind(shared_tz, "threadIdx.z")
-            self.sche.unroll(shared_inner)
-            if use_pragma_unroll:
-                self.sche.annotate(shared_inner, "pragma_unroll_explicit", False)
+            # self.sche.unroll(shared_inner)
+            # if use_pragma_unroll:
+            #     self.sche.annotate(shared_inner, "pragma_unroll_explicit", False)
 
         if is_a_consistent:
             cooperative_fetch(AS, dims=4, vec=vecA, use_pragma_unroll=True, force_async_copy=(propagate_inter_a and not propagate_inter_b))

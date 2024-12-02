@@ -181,7 +181,7 @@ class LadderFakeQuant(relay.ExprMutator):
             else:
                 attrs = ir.make_node(
                     "DictAttrs",
-                    out_dtype=out_dtype,
+                    out_dtype="float32",
                     transpose_a=transpose_a,
                     transpose_b=transpose_b,
                     **self.quant_config
@@ -191,6 +191,7 @@ class LadderFakeQuant(relay.ExprMutator):
                     [data, quant_kernel, *other_inputs],
                     attrs,
                 )
+                q_matmul = relay.cast(q_matmul, out_dtype)
             return q_matmul
     
         return super().visit_call(call)

@@ -74,10 +74,10 @@ class TEElementWiseScheduler(TESchedulerBase):
             sch[out].bind(va, te.thread_axis("vthread"))
         sch[out].bind(thrd_fused, te.thread_axis("threadIdx.x"))
 
-        for tn in tile_axis:
-            sch[out].unroll(tn)
-        write_code(
-            str(tvm.lower(sch, self.args, simple_mode=True)), log_path, 'unroll.py')
+        # for tn in tile_axis:
+        #     sch[out].unroll(tn)
+        # write_code(
+        #     str(tvm.lower(sch, self.args, simple_mode=True)), log_path, 'unroll.py')
         cache_plan = {}
         for op in self.none_reduce_ops:
             for tensor in op.input_tensors:

@@ -81,8 +81,8 @@ class TIRSIMTScheduler(TIRSchedulerBase):
             vthd_axis = vthd_axis[0:2] + [sch.fuse(*vthd_axis[2:])]
         for i, ax in enumerate(vthd_axis):
             sch.bind(ax, "vthread" + ['.x', '.y', '.z'][i])
-        for ax in tile_axis:
-            sch.unroll(ax)
+        # for ax in tile_axis:
+        #     sch.unroll(ax)
 
         cached_stages = []
         for i, input_tensor in enumerate(self.reduce_op.input_tensors):
@@ -103,9 +103,9 @@ class TIRSIMTScheduler(TIRSchedulerBase):
             self.cooperative_fetch(SS, dim_offset, strides, vectorize)
 
         sch.reverse_compute_at(CL, thrd_fused)
-        if len(tile_axis) > 0:
-            for ax in sch.get_loops(CL)[-len(tile_axis):]:
-                sch.unroll(ax)
+        # if len(tile_axis) > 0:
+        #     for ax in sch.get_loops(CL)[-len(tile_axis):]:
+        #         sch.unroll(ax)
         
         sch.decompose_reduction(C, reduce_outer_axis[0])
 
@@ -131,9 +131,9 @@ class TIRSIMTScheduler(TIRSchedulerBase):
             if len(self.shared_outputs) > 0:
                 tensor_local = sch.cache_read(block, tensor.name + "_shared", "local")
                 sch.compute_at(tensor_local, thrd_fused)
-                if len(tile_axis) > 0:
-                    for ax in sch.get_loops(tensor_local)[-len(tile_axis):]:
-                        sch.unroll(ax)
+                # if len(tile_axis) > 0:
+                #     for ax in sch.get_loops(tensor_local)[-len(tile_axis):]:
+                #         sch.unroll(ax)
             sch.compute_at(tensor_shared, thrd_fused)
             if tensor in self.shared_inputs_strides:
                 strides = self.shared_inputs_strides[tensor]

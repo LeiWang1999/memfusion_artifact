@@ -48,10 +48,14 @@ def op_compute(attrs, inputs, output_type):
             new_index = (*spatial_args, *inversed_index_map.map_indices([warp_i, warp_j]))
             return inputs[0][new_index]
     else:
+        try:
+            index_map = IndexMap.from_func(transform_func)
+        except:
+            index_map = transform_func
         def fcompute(*args):
             warp_i, warp_j = args[-2:]
             spatial_args = args[:-2]
-            permutate_i, permutate_j = transform_func.map_indices([warp_i, warp_j])
+            permutate_i, permutate_j = index_map.map_indices([warp_i, warp_j])
             new_index = (*spatial_args, permutate_i, permutate_j)
             return inputs[0][new_index]
     out = te.compute(out_shape, fcompute, "ladder_layout_transform")
