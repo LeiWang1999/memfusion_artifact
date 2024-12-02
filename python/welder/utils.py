@@ -145,6 +145,7 @@ extern "C" int {symbol}({def_args}) {{
             return None
         if ret.returncode != 0:
             print("Compile error")
+            print(" ".join(command))
             return None
         
         self.lib_name = lib_name
@@ -172,6 +173,11 @@ extern "C" int {symbol}({def_args}) {{
         def_args = ", ".join(args)
         block_str = "dim3({}, {}, {})".format(self.block_size[0], self.block_size[1], self.block_size[2])
         grid_str = "dim3({}, {}, {})".format(self.grid_size[0], self.grid_size[1], self.grid_size[2])
+        import re
+        pattern = r"(\d+)i64"
+        grid_str = re.sub(pattern, r"(int64_t)\1", grid_str) 
+        block_str = re.sub(pattern, r"(int64_t)\1", block_str) 
+
         call_str = "{}<<<{}, {}>>>({})".format(self.name, grid_str, block_str, call_args)
         host_funcs = \
 """
