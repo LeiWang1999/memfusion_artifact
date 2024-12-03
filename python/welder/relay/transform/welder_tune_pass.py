@@ -31,7 +31,7 @@ class WelderTunePass(relay.ExprMutator):
         ordered_nodes = extractor.ordered_nodes
         node_map = extractor.node_map
         # print("candidate nodes:",ordered_nodes)
-        # print(tune_node(ordered_nodes, ['sum_22']))
+        # print(tune_node(ordered_nodes, ['multiply_multiply_cast_reshape_layout_transform_ladder_layout_transform_30']))
         # raise NotImplementedError()
         
         tunner = MultiProcTunner(ordered_nodes, arch=self.arch, device="cuda:0", topk=self.topk)
@@ -164,6 +164,7 @@ class TileGraphExtractor(relay.ExprVisitor):
             self.ordered_nodes.append(node)
             self.node_map[node] = call
         else:
+            print(type(call.op), call.op)
             raise NotImplementedError()
         return node
 
