@@ -111,5 +111,12 @@ class OpVisitor(relay.ExprVisitor):
             if M != 1:
                 self.axis = (num_axis - 2, num_axis - 1)
                 self.ladder_config = (False, False, 1)
-        
+        elif call.op.name in ["nn.conv2d"]:
+            A_shape = call.args[0].checked_type.shape
+            B_shape = call.args[1].checked_type.shape
+            num_axis = int(len(call.checked_type.shape))
+            M = A_shape[1]
+            if M != 1:
+                self.axis = (num_axis - 2, num_axis - 1)
+                self.ladder_config = (False, False, 1)
         return super().visit_call(call)
