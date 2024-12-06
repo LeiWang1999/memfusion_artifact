@@ -136,12 +136,15 @@ extern "C" int {symbol}({def_args}) {{
                 f"-gencode=arch=compute_{compute_version},code=compute_{compute_version}",
                 f"-I{cutlass_dir}", "-o", lib_name]
         elif "ROCm" in arch.platform:
-            profiling_code = self._create_rocm_code_for_profiling()
-            src = tempfile.NamedTemporaryFile(mode='w', suffix=".cpp", delete=False)
-            lib_name = src.name.replace(".cpp", ".so")
-            compute_version = arch.compute_capability
-            command = ["hipcc", "-fPIC", "--shared", "-O3", "--offload-arch={}".format(compute_version),
-            src.name, "-o", lib_name]
+            if self is not None:
+                profiling_code = self._create_rocm_code_for_profiling()
+                src = tempfile.NamedTemporaryFile(mode='w', suffix=".cpp", delete=False)
+                lib_name = src.name.replace(".cpp", ".so")
+                compute_version = arch.compute_capability
+                command = ["hipcc", "-fPIC", "--shared", "-O3", "--offload-arch={}".format(compute_version),
+                src.name, "-o", lib_name]
+            else:
+                return None
         else:
             raise NotImplementedError(arch.platform)
         src.write(profiling_code)
@@ -281,4 +284,5 @@ def compile_and_load_parallel(cpresults, arch, timeout : float = None):
 def compile_parallel(cpresults, arch, timeout : float = None):
     with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
         libs = executor.map(CompileResult.compile, cpresults, [arch for _ in cpresults], [timeout for _ in cpresults])
+    print("libs, ", libs)
     return list(libs)

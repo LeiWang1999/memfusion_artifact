@@ -6,6 +6,7 @@ from ..config import Config, Stride, TileDict, LadderConfig, ConsistentConfig
 from ..graph import IRNode, Node
 from .common import factorize, get_all_factors
 from .default import DefaultPolicy
+from queue import PriorityQueue
 
 
 class LadderPolicy(DefaultPolicy):
@@ -170,9 +171,10 @@ class LadderPolicy(DefaultPolicy):
                 wmma_invalid = [block_m % wmma_m or block_n % wmma_n for wmma_m, wmma_n in [(16, 16)]]
                 if all(wmma_invalid):
                     return False
-                if any([x and (y % x) for x, y in zip(td.tile_map[node], node.get_space_dim())]):
-                    return False
-        return super().check_tile_shape_isvalid(td)
+                # if any([x and (y % x) for x, y in zip(td.tile_map[node], node.get_space_dim())]):
+                #     return False
+        return True
+        # return super().check_tile_shape_isvalid(td)
 
     def compute_node_stride_map(self, node: IRNode, td: TileDict):
         if not node.get_tag("tensorCoreConfig"):
@@ -245,7 +247,66 @@ class LadderPolicy(DefaultPolicy):
             return raster_factor
         raster_factor = int(self.arch.compute_max_core ** 0.5)
         return raster_factor
-    
+
+
+    def DFS_smem_tile(self, init_tile, topk, rstep_map, pipeline_stage:int = 1):
+        _steps = [get_all_factors(n) for n in self.output_nodes[0].get_space_dim()]
+        steps = [step[step.index(t):] for step, t in zip(_steps, init_tile)]
+        for i in range(len(steps)):
+            added = list(filter(lambda s:s < steps[i][-1] and s > steps[i][0] and s not in steps[i], [2, 4, 8, 16, 32]))
+            steps[i].extend(added)
+            steps[i] = sorted(steps[i])
+        visited_tiles = {}
+        queue = PriorityQueue()
+        def prio(td: TileDict):
+            return (td.traffic + 1) * td.num_wave # * (td.block_per_SM ** 0.5)
+        def add_to_queue(tile):
+            align_tile = tile.copy()
+            if tuple(align_tile) in visited_tiles:
+                return
+            td = self.compute_tile_dict(align_tile, rstep_map)
+            visited_tiles[tuple(align_tile)] = td
+            if td.valid:
+                queue.put([prio(td), align_tile])
+
+        add_to_queue(init_tile)
+        while not (queue.empty() or len(visited_tiles) > 2000):
+            _, tile = queue.get()
+            dim_ids = [step.index(t) for step, t in zip(steps, tile)]
+            for i in reversed(range(len(dim_ids))):
+                if dim_ids[i] + 1 < len(steps[i]):
+                    new_tile = tile.copy()
+                    new_tile[i] = steps[i][dim_ids[i] + 1]
+                    add_to_queue(new_tile)
+
+        visited_tiles = filter(lambda td: td.valid, visited_tiles.values())
+        sorted_tiles = sorted(visited_tiles, key=lambda td:prio(td))
+        return sorted_tiles
+        aligned_tiles = []
+        from copy import deepcopy
+        for td in sorted_tiles:
+            aligned_tile = deepcopy(td)
+            aligned_tile.tile_map = {}
+            aligned_tile.rstep_map = {}
+            aligned_tile.cached_tensors_map = {}
+            aligned_tile.output_strides_map = {}
+            for i in range(len(aligned_tile.output_tile)):
+                aligned_tile.output_tile[i] = (aligned_tile.output_tile[i] + 15) // 16 * 16
+            for key, val in td.tile_map.items():
+                _map = []
+                for i in range(len(val)):
+                    _map.append((val[i] + 15) // 16 * 16)   
+                aligned_tile.tile_map[key] = _map
+            for key, val in td.rstep_map.items(): 
+                aligned_tile.rstep_map[key] = val
+            for key, val in td.cached_tensors_map.items():
+                aligned_tile.cached_tensors_map[key] = val
+            for key, val in td.output_strides_map.items():
+                aligned_tile.output_strides_map[key] = val
+            aligned_tiles.append(aligned_tile)
+
+        return aligned_tiles
+
     def _assign_block_size(self, node: Node, td: TileDict, block_size: int):
         if not node.get_tag("tensorCoreConfig"):
             return super()._assign_block_size(node, td, block_size)
@@ -260,8 +321,8 @@ class LadderPolicy(DefaultPolicy):
         wmma_tile[ax_m] = wmma[0]
         wmma_tile[ax_n] = wmma[1]
         space = [tile[i] // wmma_tile[i] for i in range(ndim)]
-        if tile[ax_m] % wmma_tile[ax_m] != 0 or tile[ax_n] % wmma_tile[ax_n]:
-            return None
+        # if tile[ax_m] % wmma_tile[ax_m] != 0 or tile[ax_n] % wmma_tile[ax_n]:
+        #     return None
         if np.prod(space) % warps != 0:
             return None
         factors = factorize(np.prod(space) // warps)
@@ -289,7 +350,10 @@ class LadderPolicy(DefaultPolicy):
             warp_tile[dim_order[0]] *= factor
 
         ladder_configs = node.get_tag("ladder_config")
-        propagate_inter_a, propagate_inter_b = ladder_configs[:2]
+        if ladder_configs:
+            propagate_inter_a, propagate_inter_b = ladder_configs[:2]
+        else:
+            propagate_inter_a, propagate_inter_b = (False, False)
         codegen_dict = Config()
         codegen_dict.arch = self.arch
         codegen_dict.fast_decoding = node.get_tag("fast_decoding")

@@ -248,6 +248,10 @@ class Tunner(object):
             return result
 
         policy_list = self.get_policy_list()
+        for policy in policy_list:
+            logger.info(f"Using policy {policy.__name__}")
+        configs = self.generate_configs(policy_list, output_nodes)
+        print(f"configs: {len(configs)}")
 
         try:
             configs = self.generate_configs(policy_list, output_nodes)
@@ -262,7 +266,7 @@ class Tunner(object):
         compile_results = self.generate_code(output_nodes, configs, kernel_name)
         for cpresult in compile_results:
             cpresult.set_io_desc(input_desc, output_desc)
-            # print(cpresult.code)
+            print(cpresult.code)
         compile_parallel(compile_results, self.arch, timeout=30)
         best = self.select_best(output_nodes, compile_results)
         self.set_cache(signature, best)

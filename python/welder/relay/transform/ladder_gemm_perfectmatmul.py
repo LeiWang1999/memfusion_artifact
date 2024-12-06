@@ -21,40 +21,6 @@ class UsageTracer(relay.ExprVisitor):
         return super().visit_call(call)
 
 
-class PreviousOutputFusibleTracer(relay.ExprVisitor):
-    def __init__(self):
-        super().__init__()
-        self.output_fusible_list = ["nn.conv2d", "nn.dense", "nn.max_pool2d"]
-        self.node_previous_fusible_node = {}
-        
-    def transform_function(self, func, mod, ctx):
-        return self.visit(func)
-
-    def visit_call(self, call):
-        if isinstance(call.op, ir.Op) and call.op.name == "nn.conv2d":
-            find_previous_output = False
-            current_node = call
-            while not find_previous_output:
-                # make sure at lease one input node has op attr
-                opnode_list = []
-                for input_node in current_node.args:
-                    if hasattr(input_node, "op"):
-                        opnode_list.append(input_node)
-
-                if len(opnode_list) == 0:
-                    self.node_previous_fusible_node[call] = None
-                    find_previous_output = True
-                    
-                for input_node in opnode_list:
-                    if input_node.op.name in self.output_fusible_list:
-                        self.node_previous_fusible_node[call] = input_node
-                        find_previous_output = True
-                        break
-                    else:  
-                        current_node = input_node
-        return super().visit_call(call)
-        
-
 @relay.transform.function_pass(opt_level=0, required=["InferType"])
 class LadderPerfectGemmTransform(relay.ExprMutator):
     def __init__(self, use_async_propagation=False, arch=None):
@@ -67,12 +33,6 @@ class LadderPerfectGemmTransform(relay.ExprMutator):
             self.arch=arch
 
     def transform_function(self, func, mod, ctx):
-        usage_tracer = UsageTracer()
-        previous_output_fusible_tracer = PreviousOutputFusibleTracer()
-        usage_tracer.visit(func)
-        previous_output_fusible_tracer.visit(func)
-        self.node_output_map = usage_tracer.node_output_map
-        self.node_previous_fusible_node = previous_output_fusible_tracer.node_previous_fusible_node
         return self.visit(func)
 
     def visit_call(self, call):
@@ -115,15 +75,8 @@ class LadderPerfectGemmTransform(relay.ExprMutator):
             out_dtype = call.checked_type.dtype
             # if the data's node has only one output, we can propagate the layout
             if M % warp_compute_tile_m != 0 or K % warp_compute_tile_n != 0 or N % warp_compute_tile_k != 0:
-                if M % warp_compute_tile_m != 0 or N % warp_compute_tile_n != 0:
-                    print("currently do not suppory m pad or n pad")
-                    return super().visit_call(call)
-                gemm = relay.Call(
-                    relay.op.get("ladder.C2DImplicitGemm"),
-                    [data, kernel],
-                    call.attrs,
-                )
-                return relay.reshape(gemm, out_shape)
+                print("currently do not suppory m pad or n pad")
+                return super().visit_call(call)
 
             can_propagate = False
 

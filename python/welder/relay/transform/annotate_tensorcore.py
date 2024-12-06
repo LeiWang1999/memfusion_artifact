@@ -46,10 +46,19 @@ class OpVisitor(relay.ExprVisitor):
                 is_type_verified = False
 
             is_shape_verified = check_tensor_core_valid_shape(M, N, K)
-
+        
             if is_type_verified and is_shape_verified:
                 num_axis = int(len(call.checked_type.shape))
                 assert self.axis is None
                 self.axis = (num_axis - 2, num_axis - 1)
-
+            else:
+                print("Skip tensorcore annotation for op: {} as is_type_verified={} is_shape_verified{}".format(call.op.name,is_type_verified, is_shape_verified))
+                print("M={}, N={}, K={}".format(M, N, K))
+                print("A_shape={}, B_shape={}".format(A_shape, B_shape))
+                print("call.type_args={}, call.checked_type.dtype={}".format(call.type_args, call.checked_type.dtype))
+                # HACK implementaion
+                num_axis = int(len(call.checked_type.shape))
+                assert self.axis is None
+                self.axis = (num_axis - 2, num_axis - 1)
+                
         return super().visit_call(call)

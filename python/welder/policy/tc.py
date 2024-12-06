@@ -98,7 +98,7 @@ class TCPolicy(DefaultPolicy):
             if node.get_tag("tensorCoreConfig"):
                 ax_m, ax_n = node.get_tag("tensorCoreConfig")
                 block_m, block_n = td.tile_map[node][ax_m], td.tile_map[node][ax_n]
-                wmma_invalid = [block_m % wmma_m or block_n % wmma_n for wmma_m, wmma_n in [(16, 16), (8, 32), (32, 8)]]
+                wmma_invalid = [block_m % wmma_m or block_n % wmma_n for wmma_m, wmma_n in [(16, 16)]]
                 if all(wmma_invalid):
                     return False
                 if any([y % x for x, y in zip(td.tile_map[node], node.get_space_dim())]):
@@ -152,8 +152,8 @@ class TCPolicy(DefaultPolicy):
         wmma_tile[ax_m] = wmma[0]
         wmma_tile[ax_n] = wmma[1]
         space = [tile[i] // wmma_tile[i] for i in range(ndim)]
-        if tile[ax_m] % wmma_tile[ax_m] != 0 or tile[ax_n] % wmma_tile[ax_n]:
-            return None
+        # if tile[ax_m] % wmma_tile[ax_m] != 0 or tile[ax_n] % wmma_tile[ax_n]:
+        #     return None
         if np.prod(space) % warps != 0:
             return None
         factors = factorize(np.prod(space) // warps)
